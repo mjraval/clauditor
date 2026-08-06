@@ -1,0 +1,39 @@
+[
+  {
+    "pid": 1111,
+    "cwd": "/home/user/projects/ok-repo",
+    "kind": "interactive",
+    "startedAt": 1783451769755,
+    "sessionId": "aaaaaaaa-1111-2222-3333-444444444444",
+    "name": "ok-session",
+    "status": "idle",
+    "futureUnknownField": {"nested": ["stuff", 42]},
+    "anotherNewField": true
+  },
+  {
+    "kind": "background",
+    "state": "working"
+  },
+  {
+    "pid": "not-a-number",
+    "cwd": 12345,
+    "kind": "background",
+    "startedAt": "not-a-timestamp",
+    "sessionId": null,
+    "name": ["array", "instead", "of", "string"],
+    "state": "working",
+    "waitingFor": 99
+  },
+  {
+    "pid": 2222,
+    "cwd": "/home/user/projects/ok-repo-2",
+    "kind": "background",
+    "id": "deadbeef",
+    "startedAt": 1783451769755,
+    "sessionId": "bbbbbbbb-1111-2222-3333-444444444444",
+    "name": "ok-bg-session",
+    "status": "waiting",
+    "waitingFor": "permission prompt",
+    "state": "blocked"
+  }
+]

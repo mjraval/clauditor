@@ -1,0 +1,12 @@
+# reference repos (read-only clones, never committed)
+references/
+
+# build artifacts
+/bin/
+/clauditor
+/dist/
+coverage.out
+
+# local state
+*.log
+.envrc

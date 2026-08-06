@@ -1,0 +1,61 @@
+[
+  {
+    "pid": 3526266,
+    "id": "4ee88fb6",
+    "cwd": "/tmp/scratch/bgprobe",
+    "kind": "background",
+    "startedAt": 1786043606167,
+    "sessionId": "4ee88fb6-baa5-45d4-8b46-ca6550796584",
+    "name": "redacted-working",
+    "status": "busy",
+    "state": "working"
+  },
+  {
+    "pid": 3526257,
+    "id": "f290fb7a",
+    "cwd": "/tmp/scratch/bgprobe",
+    "kind": "background",
+    "startedAt": 1786043618461,
+    "sessionId": "f290fb7a-dbaf-4623-914d-87405b8c67a9",
+    "name": "probe-blocked",
+    "status": "waiting",
+    "waitingFor": "input needed",
+    "state": "blocked"
+  },
+  {
+    "id": "4ee88fb6",
+    "cwd": "/tmp/scratch/bgprobe",
+    "kind": "background",
+    "startedAt": 1786043605090,
+    "sessionId": "4ee88fb6-baa5-45d4-8b46-ca6550796584",
+    "name": "redacted-done",
+    "state": "done"
+  },
+  {
+    "id": "f290fb7a",
+    "cwd": "/tmp/scratch/bgprobe",
+    "kind": "background",
+    "startedAt": 1786043618203,
+    "sessionId": "f290fb7a-dbaf-4623-914d-87405b8c67a9",
+    "name": "redacted-stopped",
+    "state": "stopped"
+  },
+  {
+    "pid": 125770,
+    "cwd": "/home/user/projects/example-repo",
+    "kind": "interactive",
+    "startedAt": 1783451769755,
+    "sessionId": "9640f722-9992-4d18-91b1-3a9d272c36d2",
+    "name": "example-repo-7f",
+    "status": "idle"
+  },
+  {
+    "pid": 1790423,
+    "cwd": "/home/user/projects/example-repo-2",
+    "kind": "interactive",
+    "startedAt": 1783752872750,
+    "sessionId": "4cd90245-a147-4055-a27f-a7192dcf64bf",
+    "name": "example-repo-2-54",
+    "status": "busy"
+  }
+]

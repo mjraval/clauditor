@@ -1,0 +1,44 @@
+# clauditor config — copy to ~/.config/clauditor/config.toml and adjust.
+# Populated from Phase-0 findings on the reference machine (2026-08-06):
+# an umbrella workspace at ~/projects/monorepo containing ~12 repos, plus
+# loose repos directly under ~/projects.
+
+# Explicit repo roots (always included, no scanning)
+repos = []
+
+# Scanned to depth 2 for .git (dir or file; linked worktrees are resolved
+# to their main repo and deduped)
+workspace_dirs = ["/home/rishi/projects", "/home/rishi/projects/monorepo"]
+
+[poll]
+claude_seconds = 5
+tmux_seconds   = 10
+git_seconds    = 20
+
+[git]
+dirty_check  = true
+ahead_behind = false
+
+[tmux]
+heuristics = false            # pane-text state guessing (fallback only)
+
+[serve]
+listen = "127.0.0.1:8790"
+snapshot_file = ""            # optional debug snapshot path
+
+[access]                       # Cloudflare Access JWT validation
+team_domain = "yourteam.cloudflareaccess.com"
+policy_aud  = ""               # AUD tag from the Access app (deploy/ACCESS.md)
+
+[actions]
+enabled = false                # first deploy is read-only
+experimental_reply = false     # tmux-injection reply (docs/REPLY.md)
+
+[dispatch]
+worktree_base = ""             # default: <repo>/../<repo>-worktrees
+
+[links]
+worktree_url_template = ""     # e.g. "https://{branch}.dev.example.com"
+
+[notify]
+debounce_seconds = 30

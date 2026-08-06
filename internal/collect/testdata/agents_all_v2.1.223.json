@@ -1,0 +1,74 @@
+[
+  {
+    "pid": 125770,
+    "cwd": "/home/rishi/projects/monorepo/stables-web-abilities",
+    "kind": "interactive",
+    "startedAt": 1783451769755,
+    "sessionId": "9640f722-9992-4d18-91b1-3a9d272c36d2",
+    "name": "redacted-name-125770",
+    "status": "idle"
+  },
+  {
+    "pid": 144098,
+    "cwd": "/home/rishi/projects/monorepo/stables-ops",
+    "kind": "interactive",
+    "startedAt": 1783452758573,
+    "sessionId": "07080097-a4b0-40aa-bd3b-3ffed66edcd9",
+    "name": "redacted-name-144098",
+    "status": "idle"
+  },
+  {
+    "pid": 1783028,
+    "cwd": "/home/rishi/projects/monorepo/stables-core-web",
+    "kind": "interactive",
+    "startedAt": 1783752755993,
+    "sessionId": "28502c1b-4442-43b1-8ae7-6ec0b6ed54b1",
+    "name": "redacted-name-1783028",
+    "status": "idle"
+  },
+  {
+    "pid": 1790423,
+    "cwd": "/home/rishi/projects/monorepo/stables-core-web-backoffice",
+    "kind": "interactive",
+    "startedAt": 1783752872750,
+    "sessionId": "4cd90245-a147-4055-a27f-a7192dcf64bf",
+    "name": "redacted-name-1790423",
+    "status": "busy"
+  },
+  {
+    "pid": 1870622,
+    "cwd": "/home/rishi/projects/monorepo/stables-core-app",
+    "kind": "interactive",
+    "startedAt": 1785947987971,
+    "sessionId": "a4140134-173f-4057-8286-2c172c49920c",
+    "name": "redacted-name-1870622",
+    "status": "idle"
+  },
+  {
+    "pid": 3514737,
+    "cwd": "/home/rishi/projects/clauditor",
+    "kind": "interactive",
+    "startedAt": 1786043220876,
+    "sessionId": "96752965-36ac-41b5-9c8e-767273e65cde",
+    "name": "redacted-name-3514737",
+    "status": "busy"
+  },
+  {
+    "id": "4ee88fb6",
+    "cwd": "/tmp/claude-1000/-home-rishi-projects-clauditor/96752965-36ac-41b5-9c8e-767273e65cde/scratchpad/bgprobe",
+    "kind": "background",
+    "startedAt": 1786043605090,
+    "sessionId": "4ee88fb6-baa5-45d4-8b46-ca6550796584",
+    "name": "redacted-name-4ee88fb6",
+    "state": "done"
+  },
+  {
+    "id": "f290fb7a",
+    "cwd": "/tmp/claude-1000/-home-rishi-projects-clauditor/96752965-36ac-41b5-9c8e-767273e65cde/scratchpad/bgprobe",
+    "kind": "background",
+    "startedAt": 1786043618203,
+    "sessionId": "f290fb7a-dbaf-4623-914d-87405b8c67a9",
+    "name": "redacted-name-f290fb7a",
+    "state": "stopped"
+  }
+]

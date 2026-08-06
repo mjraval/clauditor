@@ -1,0 +1,4 @@
+worktree /home/rishi/projects/monorepo/stables-core-app
+HEAD 4e323dc4eab9ca0ad02f786c13bd63d0102c6594
+branch refs/heads/chore/test-parallel-progress-output
+

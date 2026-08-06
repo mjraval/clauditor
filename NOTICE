@@ -1,0 +1,38 @@
+clauditor — NOTICE
+==================
+
+clauditor studies and, where licenses permit, adapts techniques from the
+following projects. Per the project rule (SPEC.md §3): code is ported only
+from MIT/Apache-2.0/BSD sources with attribution here; from anything else,
+ideas only, re-expressed from scratch.
+
+1. tmux-claude-session-manager
+   https://github.com/craftzdog/tmux-claude-session-manager
+   License: MIT — Copyright (c) 2026 Takuya Matsuyama
+   Adapted: the pid→tty→pane correlation approach for mapping supervisor
+   sessions to tmux panes; the attention-first ordering policy
+   (waiting > idle > unknown > busy); use of `tmux capture-pane -e -p`
+   for ANSI-preserving previews; transcript-mtime last-activity lookup via
+   `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<sessionId>.jsonl`.
+   All adapted logic re-implemented in Go; no shell code copied verbatim.
+
+2. dmux
+   https://github.com/formkit/dmux
+   License: MIT — Copyright (c) 2025 Justin Schroeder
+   Adapted: worktree lifecycle conventions (branch slug naming, worktree
+   directory placement) informing clauditor's `newWorktree` dispatch.
+   Re-implemented in Go.
+
+3. agent-deck
+   https://github.com/asheshgoplani/agent-deck
+   License: MIT — Copyright (c) 2025 Ashesh Goplani
+   Studied for information architecture (grouping, needs-attention
+   surfacing) and remote-control protocol design. No code ported.
+
+4. claude-tmux
+   https://github.com/nielsgroen/claude-tmux
+   License: AGPL-3.0-only — Copyright (C) 2026 Niels Groeneveld
+   IDEAS ONLY — no code, comments, identifiers, regexes, or format strings
+   ported (AGPL is outside this project's port allowlist). Cited as prior
+   art for: pane-id-as-canonical-handle, git-context-driven action gating,
+   tolerant tab-separated tmux format parsing.

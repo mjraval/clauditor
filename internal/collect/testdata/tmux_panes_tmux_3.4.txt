@@ -1,0 +1,12 @@
+core-app	1	1	%3	93174	claude	/home/rishi/projects/monorepo/stables-core-app	claude	1
+core-infra	1	1	%4	93819	bash	/home/rishi/projects/monorepo/stables-core-infra	bash	0
+core-web	1	1	%5	94472	claude	/home/rishi/projects/monorepo/stables-core-web	claude	0
+core-web-backoffice	1	1	%6	95104	claude	/home/rishi/projects/monorepo/stables-core-web-backoffice	claude	0
+design-system	1	1	%2	92371	bash	/home/rishi/projects/monorepo/app-design-system	bash	0
+insights	1	1	%7	96550	bash	/home/rishi/projects/monorepo/stables-insights	bash	0
+monorepo	1	1	%12	1756848	bash	/home/rishi/projects/monorepo	bash	0
+ops	1	1	%8	97149	claude	/home/rishi/projects/monorepo/stables-ops	claude	0
+org-infra	1	1	%9	97915	bash	/home/rishi/projects/monorepo/stables-org-infra	bash	0
+stables-core-app	1	1	%0	2042	bash	/home/rishi/projects/monorepo/stables-core-app	bash	0
+stables_xyz	1	1	%11	99150	bash	/home/rishi/projects/monorepo/stables.xyz	bash	0
+web-abilities	1	1	%10	98534	claude	/home/rishi/projects/monorepo/stables-web-abilities	claude	0
