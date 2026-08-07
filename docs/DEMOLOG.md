@@ -122,3 +122,16 @@ curl -s -X POST "localhost:8790/api/v1/sessions/$KEY/reply" \
 
 # in the browser: + dispatch FAB (with working-count), per-session
 # stop / respawn / open-in-tmux / reply buttons in the drawer.
+
+## M6 — TUI
+
+```sh
+make build
+./bin/clauditor tui          # in-process collectors, or auto-connects to a
+                             # running `serve` via <state>/local_token
+# keys: j/k move · / filter · s cycle state · enter open-in-tmux
+#       l logs pager · d dispatch · x stop (confirm) · q quit
+```
+
+Verified live 2026-08-06 in a 100×30 tmux pane: grouped buckets, glyphs,
+tmux targets, [in-process] source indicator.
