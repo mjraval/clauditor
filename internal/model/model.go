@@ -93,6 +93,12 @@ type Snapshot struct {
 	Repos       []*Repo    `json:"repos"`
 	Sessions    []*Session `json:"sessions"` // flat view, same pointers as under repos
 	Collectors  Health     `json:"collectors"`
+	// CollectorAges is seconds since each collector's last success, keyed
+	// "claude"|"tmux"|"git" (-1 = never). Populated by store.Poller on every
+	// Set so it serializes over /api/v1/state — the TUI reads it for the `?`
+	// sources line and header failure segments. Distinct from Health, which
+	// stays internal to /healthz.
+	CollectorAges map[string]int64 `json:"collectorAges,omitempty"`
 }
 
 // Health reports collector liveness for /healthz.

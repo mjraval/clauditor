@@ -36,6 +36,7 @@ func (p *Poller) RunOnce(ctx context.Context) *model.Snapshot {
 	snap := model.Correlate(model.Inputs{
 		Agents: d.Agents, Panes: d.Panes, Procs: d.Procs, Repos: d.Repos, Now: now,
 	})
+	snap.CollectorAges = p.Store.CollectorAges(now)
 	p.Store.Set(snap)
 	return snap
 }
@@ -104,6 +105,7 @@ func (p *Poller) Run(ctx context.Context) {
 			Agents: agents, Panes: cachedPanes, Procs: cachedProcs,
 			Repos: cachedRepos, Now: now,
 		})
+		snap.CollectorAges = p.Store.CollectorAges(now)
 		p.Store.Set(snap)
 
 		j := time.Duration((rand.Float64()*0.4 - 0.2) * float64(claudeIv))
