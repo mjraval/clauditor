@@ -46,18 +46,25 @@ by state (needs-input first), then repo, then worktree.
 
 | Key | Action |
 |---|---|
-| `↑`/`↓` or `k`/`j` | move the selection |
+| `↑`/`↓` or `k`/`j`, `g`/`G`, `ctrl+d`/`ctrl+u` | move the selection / jump to first (the top blocked session) or last / half-page |
 | `enter` | **attach** — `claude attach` a supervisor session, or jump to a tmux-pane session (switch-client inside tmux, else `tmux attach`) |
 | `r` | **reply** inline to a session waiting on input (only when it's blocked and has a background id) |
+| `D` | **make durable** — on a `⌁bare` session (interactive, not in tmux: dies with its SSH connection) opens a sheet with the honest options; on durable sessions it tells you why you're fine |
 | `o` | open the session in a tmux window **without** switching to it |
 | `d` | dispatch a new background session into the selected repo/worktree |
 | `x` | stop the selected session (with confirm) |
 | `R` | respawn a stopped/failed session |
 | `l` | full-screen logs pager for the selection |
-| `/` | filter by substring |
-| `s` | cycle the state filter (all → needs → working → idle → terminal) |
+| `/` | filter by substring (live, as you type) |
+| `1` `2` `3` `4` | show only needs-input / working / idle / done+failed+stopped (same key again clears; `s` still cycles) |
 | `tab` | toggle the preview (narrow terminals) |
-| `q` | quit |
+| `?` | help overlay — every key, plus live collector health |
+| `esc` | clear the topmost thing (overlay → filter → state filter); never quits |
+| `q` | quit — instant, no questions |
+
+The full design rationale — frozen keys, color semantics, the durability
+mechanics, and the v1.1/v2 roadmap (new-session key, resume picker, command
+palette) — lives in `docs/TUI-DESIGN.md`.
 
 The live preview reads a tmux pane directly (`capture-pane`) when the session
 has one, otherwise it tails `claude logs`. It refreshes on its own 2-second
