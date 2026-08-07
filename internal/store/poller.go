@@ -76,7 +76,7 @@ func (p *Poller) Run(ctx context.Context) {
 		}
 
 		if now.Sub(lastGit) >= gitIv {
-			repoPaths := p.Fleet.Git.DiscoverRepos(ctx, p.Fleet.Repos, p.Fleet.WorkspaceDirs)
+			repoPaths := p.Fleet.Git.DiscoverReposAuto(ctx, p.Fleet.Repos, p.Fleet.WorkspaceDirs, collect.SessionCWDs(agents, cachedPanes))
 			var repos []collect.RepoInfo
 			ok := true
 			for _, rp := range repoPaths {

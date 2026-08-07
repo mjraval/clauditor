@@ -77,6 +77,59 @@ func (c *GitCollector) DiscoverRepos(ctx context.Context, repos, workspaceDirs [
 	return out
 }
 
+// DiscoverReposAuto returns the repo roots to inspect this cycle. When either
+// explicit repos or workspace dirs are configured it defers to DiscoverRepos
+// (the configured behaviour). When BOTH are empty — the zero-config case — it
+// derives repo roots from the live sessions' cwds: each distinct cwd is
+// resolved to its git toplevel (`git -C <cwd> rev-parse --show-toplevel`;
+// failure = not a repo, tolerated), then linked worktrees are mapped to their
+// main repo via resolveMainRepo, and the result is deduped. This is what makes
+// `clauditor` correlate sessions to repos with no config at all.
+func (c *GitCollector) DiscoverReposAuto(ctx context.Context, repos, workspaceDirs, agentCWDs []string) []string {
+	if len(repos) > 0 || len(workspaceDirs) > 0 {
+		return c.DiscoverRepos(ctx, repos, workspaceDirs)
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		p = filepath.Clean(p)
+		if p == "" || p == "." || seen[p] {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	cwdSeen := map[string]bool{}
+	for _, cwd := range agentCWDs {
+		cwd = filepath.Clean(cwd)
+		if cwd == "" || cwd == "." || cwdSeen[cwd] {
+			continue
+		}
+		cwdSeen[cwd] = true
+		top := c.gitToplevel(ctx, cwd)
+		if top == "" {
+			continue // not a git repo — tolerate
+		}
+		if main := c.resolveMainRepo(ctx, top); main != "" {
+			add(main) // maps a linked worktree to its main repo (and is a no-op for a main checkout)
+		} else {
+			add(top)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// gitToplevel returns the working-tree root of dir, or "" when dir is not
+// inside a git repository (or git fails). Doubles as the is-this-a-repo probe.
+func (c *GitCollector) gitToplevel(ctx context.Context, dir string) string {
+	out, err := c.Runner.Run(ctx, dir, "git", "rev-parse", "--path-format=absolute", "--show-toplevel")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // scanForGit returns directories under root (inclusive) up to maxDepth that
 // contain a .git entry.
 func scanForGit(root string, maxDepth int) []string {
