@@ -1,7 +1,45 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <title>clauditor</title>
-<body style="background:#111;color:#ddd;font-family:system-ui">
-<p>clauditor WebUI lands in M4. The API is live: <a href="/api/v1/state" style="color:#8ab4f8">/api/v1/state</a></p>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+</head>
+<body>
+<header id="topbar">
+  <h1>clauditor</h1>
+  <div id="counters">
+    <button class="counter needs" data-filter="needs"><span class="n">0</span> need input</button>
+    <button class="counter working" data-filter="working"><span class="n">0</span> working</button>
+    <button class="counter done" data-filter="done"><span class="n">0</span> done</button>
+  </div>
+</header>
+<div id="stale" hidden>⚠ disconnected — stale since <span id="stale-secs">0</span>s</div>
+<main id="board" aria-live="polite">
+  <p class="empty">connecting…</p>
+</main>
+
+<div id="drawer-backdrop" hidden></div>
+<aside id="drawer" hidden aria-label="session detail">
+  <div id="drawer-head">
+    <span id="drawer-chip"></span>
+    <h2 id="drawer-title"></h2>
+    <button id="drawer-close" aria-label="close">✕</button>
+  </div>
+  <dl id="drawer-meta"></dl>
+  <div id="drawer-copy"></div>
+  <div id="drawer-actions" hidden></div>
+  <div id="drawer-logs-head">
+    <h3>recent output</h3>
+    <button id="logs-refresh">refresh</button>
+  </div>
+  <pre id="drawer-logs">…</pre>
+</aside>
+
+<div id="toast" hidden></div>
+<script type="module" src="/app.js"></script>
 </body>
+</html>

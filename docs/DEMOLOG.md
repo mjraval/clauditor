@@ -86,3 +86,15 @@ curl -s -X POST "localhost:8790/api/v1/sessions/$KEY/stop"
 ```
 
 Verified live 2026-08-06 (transcript in git history of this file's commit).
+
+## M4 — WebUI (read-only board)
+
+```sh
+make build
+./bin/clauditor serve --dev-insecure-local &
+# open http://127.0.0.1:8790/ (or via SSH port-forward from the Mac:
+#   ssh -L 8790:127.0.0.1:8790 devbox   → http://localhost:8790)
+# Board: needs-input on top, working, idle/interactive, done (collapsed);
+# tap a counter to filter; tap a row for the session drawer with logs,
+# copy-attach/resume buttons; SSE keeps it live (kill serve → stale banner).
+```

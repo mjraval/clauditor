@@ -1,0 +1,92 @@
+# ARCHITECTURE.md
+
+## Shape
+
+One static Go binary, seven subcommands, three layers:
+
+```
+collectors (internal/collect)  →  model.Correlate  →  store (snapshot+bus)
+     claude agents --json                                  │
+     tmux list-panes + ps                    ┌─────────────┼─────────────┐
+     git worktree list                     notify        api (HTTP)     tui
+                                          (differ)     SSE + actions
+```
+
+The **snapshot is the product** (lesson from agent-deck, docs/RESEARCH.md):
+one flattened, pre-correlated `model.Snapshot` consumed unchanged by
+`status`, `notify`, the HTTP API, the SSE stream, the WebUI, and the TUI.
+State derivation happens exactly once, in `model.Correlate`.
+
+## Decisions & rationale
+
+**Supervisor is the source of truth.** `claude agents --json` provides
+existence + state for every session (interactive AND background — verified
+empirically, RESEARCH.md Q1). The tmux scanner only (a) maps sessions to
+panes and (b) catches claude processes the supervisor doesn't list. Pane-text
+heuristics exist in prior art and rot; clauditor ships none in the state
+path (SPEC allows a quarantined fallback; not needed so far — the config
+knob `tmux.heuristics` is reserved).
+
+**Dependencies** (SPEC §4 suggested; actual):
+- `BurntSushi/toml` — config, as suggested.
+- `golang-jwt/jwt/v5` — Access JWT validation. JWKS fetching is ~100 lines
+  of stdlib (internal/api/jwks.go) instead of a JWKS helper dep: the
+  Cloudflare document is a plain RSA key list, and owning the cache lets us
+  implement rotation-tolerance (serve cached key when refetch fails) exactly
+  as §9 asks.
+- `charmbracelet/bubbletea + lipgloss` — TUI (M6), as suggested.
+- **No fsnotify** in T1: the 5s poll is within the product's latency budget
+  and one fewer dep; the accelerator slot (§5.1) remains open, trigger-only.
+
+**WebUI: vanilla ES modules, no framework.** The UI is one list + one
+drawer + one form. Vendoring preact+htm buys component abstraction we don't
+need at this size and adds a third-party payload to security-review; plain
+DOM with two render functions is smaller than preact itself. If T2's
+terminal view grows real component needs, revisit (xterm.js will be
+vendored then anyway). No build step: files under `web/static` are the
+artifact, embedded via `go:embed`.
+
+**Interactive-session states.** The supervisor reports `status busy|idle|
+waiting` for interactive sessions (no `state` field). Mapping: busy→working,
+waiting→blocked, idle→idle. tmux-only sessions are `unknown` — honesty over
+guessing.
+
+**Dedupe rule.** A supervisor session attached in a pane is found by both
+collectors. Primary match: pane pid subtree contains the session pid
+(one `ps` snapshot per cycle). Fallback: suppress tmux-found claudes whose
+cwd equals a *live* (pid>0) supervisor session's cwd — dead sessions don't
+suppress, so a stopped bg session and a new interactive claude in the same
+directory both render.
+
+**Session keys.** Supervisor sessions: `sup-<sessionId>` (stable across
+restarts, survives supervisor renames — `name` is mutable display text,
+verified in Phase 0). tmux-only: `tmux-<pane>-<pid>` (a new claude in the
+same pane is a new session).
+
+**Actions never bypass permissions.** The deny-list covers the top-level
+flags AND the `claude agents` dispatch spellings discovered in Phase 0
+(`--allow-dangerously-skip-permissions`). Flag-shaped `name/model/agent`
+values are rejected so argv can't be smuggled.
+
+**Worktree creation** follows the dmux-derived recipe (RESEARCH.md §2.3):
+prune → verify base with `--end-of-options` → path triage (idempotent when
+the dir is already a worktree) → branch-exists probe chooses
+`worktree add <dir> <branch>` vs `worktree add <dir> -b <branch> [base]`.
+Dispatching inside the new worktree makes Claude Code skip its own bg
+isolation (Appendix A) — that's the point.
+
+**Poller cadences.** One loop at the claude interval (5s ±20% jitter);
+tmux (10s) and git (20s) re-collect within that loop when their interval
+has elapsed, and their last results are reused otherwise, so every snapshot
+is complete without cross-goroutine merging.
+
+## Divergences from SPEC assumptions (per §17.8)
+
+- `claude agents --json` **does** list interactive sessions (SPEC hedged on
+  this). The tmux scanner is therefore a pane-mapper + safety net, not the
+  primary interactive discovery path.
+- Observed schema has no `waitingFor` on interactive sessions and drops
+  `pid`/`status` on terminal states; the parser treats every field as
+  optional anyway.
+- `claude logs` has no tail flag and emits a raw ANSI screen replay; the
+  API strips ANSI server-side and caps at 256 KiB.

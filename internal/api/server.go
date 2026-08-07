@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	guard := NewMutatingGuard(s.Cfg.Actions.Enabled, 10)
 
 	mux.Handle("GET /api/v1/state", authed(s.handleState))
+	mux.Handle("GET /api/v1/config", authed(s.handleConfig))
 	mux.Handle("GET /api/v1/sessions/{key}", authed(s.handleSession))
 	mux.Handle("GET /api/v1/sessions/{key}/logs", authed(s.handleLogs))
 	mux.Handle("GET /api/v1/events", authed(s.handleEvents))
@@ -127,6 +128,16 @@ func (s *Server) ListenAndServe(ctx context.Context, listen string, allowExposed
 		return nil
 	}
 	return err
+}
+
+// handleConfig exposes the UI-relevant config bits (never secrets).
+func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]any{
+		"actionsEnabled":      s.Cfg.Actions.Enabled,
+		"experimentalReply":   s.Cfg.Actions.ExperimentalReply,
+		"worktreeUrlTemplate": s.Cfg.Links.WorktreeURLTemplate,
+		"version":             version.Version,
+	})
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
