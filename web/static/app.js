@@ -307,6 +307,83 @@ function renderDrawerActions(s) {
   }
 }
 
+// ---------- dispatch sheet (M5) ----------
+
+function workingCount() {
+  return (state.snapshot?.sessions || []).filter((s) => s.state === "working").length;
+}
+
+function openSheet() {
+  fillRepoPicker();
+  $("#sheet-working").textContent = workingCount();
+  $("#sheet").hidden = false;
+  $("#sheet-backdrop").hidden = false;
+}
+
+function closeSheet() {
+  $("#sheet").hidden = true;
+  $("#sheet-backdrop").hidden = true;
+}
+
+function fillRepoPicker() {
+  const repos = (state.snapshot?.repos || []).filter((r) => r.name !== "(loose)");
+  $("#d-repo").innerHTML = repos.map((r) => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join("");
+  fillWorktreePicker();
+}
+
+function fillWorktreePicker() {
+  const repo = (state.snapshot?.repos || []).find((r) => r.name === $("#d-repo").value);
+  const opts = (repo?.worktrees || []).map((wt) =>
+    `<option value="${esc(wt.path)}">${esc(wt.branch || wt.path.split("/").pop())}${wt.dirty === "true" ? " ●" : ""}</option>`);
+  opts.push(`<option value="__new__">+ new worktree…</option>`);
+  $("#d-worktree").innerHTML = opts.join("");
+  $("#d-new-wt").hidden = $("#d-worktree").value !== "__new__";
+}
+
+async function submitDispatch(e) {
+  e.preventDefault();
+  const repo = $("#d-repo").value;
+  const wt = $("#d-worktree").value;
+  const target = { repo };
+  if (wt === "__new__") {
+    const branch = $("#d-branch").value.trim();
+    if (!branch) { toast("branch name required for a new worktree"); return; }
+    target.newWorktree = { branch, base: $("#d-base").value.trim() || undefined };
+  } else if (wt) {
+    target.worktree = wt;
+  }
+  const body = {
+    target,
+    prompt: $("#d-prompt").value,
+    name: $("#d-name").value.trim() || undefined,
+    model: $("#d-model").value.trim() || undefined,
+  };
+  $("#d-submit").disabled = true;
+  const res = await act("/api/v1/dispatch", body);
+  $("#d-submit").disabled = false;
+  if (!res) return;
+  closeSheet();
+  $("#d-prompt").value = "";
+  const where = res.createdWorktree ? ` in new worktree ${res.createdWorktree}` : "";
+  toast(`⏳ dispatched${where} — waiting for it to appear…`, 6000);
+  if (res.shortId) watchForSession(res.shortId);
+}
+
+// watchForSession toasts once the dispatched session shows up in a snapshot.
+function watchForSession(shortId) {
+  const started = Date.now();
+  const t = setInterval(() => {
+    const found = (state.snapshot?.sessions || []).find((s) => s.id === shortId);
+    if (found) {
+      clearInterval(t);
+      toast(`✓ session ${shortId} is ${found.state} — ${found.name || ""}`);
+    } else if (Date.now() - started > 30000) {
+      clearInterval(t);
+      toast(`session ${shortId} not visible yet — check the board`);
+    }
+  }, 1500);
+}
+
 // ---------- live updates ----------
 
 function connectSSE() {
@@ -315,6 +392,7 @@ function connectSSE() {
     state.snapshot = JSON.parse(ev.data);
     state.staleSince = null;
     $("#stale").hidden = true;
+    $("#fab-working").textContent = `· ${workingCount()} working`;
     render();
   });
   es.onerror = () => {
@@ -354,6 +432,18 @@ async function boot() {
   $("#drawer-close").onclick = closeDrawer;
   $("#drawer-backdrop").onclick = closeDrawer;
   $("#logs-refresh").onclick = loadLogs;
+
+  // dispatch sheet (rendered only when actions are enabled)
+  if (state.cfg.actionsEnabled) {
+    $("#fab").hidden = false;
+    $("#fab-working").textContent = `· ${workingCount()} working`;
+    $("#fab").onclick = openSheet;
+    $("#sheet-close").onclick = closeSheet;
+    $("#sheet-backdrop").onclick = closeSheet;
+    $("#d-repo").onchange = fillWorktreePicker;
+    $("#d-worktree").onchange = () => { $("#d-new-wt").hidden = $("#d-worktree").value !== "__new__"; };
+    $("#dispatch-form").onsubmit = submitDispatch;
+  }
 }
 
 boot();

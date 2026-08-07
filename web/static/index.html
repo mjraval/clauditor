@@ -39,6 +39,38 @@
   <pre id="drawer-logs">…</pre>
 </aside>
 
+<button id="fab" hidden>+ dispatch <span id="fab-working"></span></button>
+
+<div id="sheet-backdrop" hidden></div>
+<aside id="sheet" hidden aria-label="dispatch">
+  <div id="drawer-head">
+    <h2>dispatch background session</h2>
+    <button id="sheet-close" aria-label="close">✕</button>
+  </div>
+  <form id="dispatch-form">
+    <label>repo
+      <select id="d-repo" required></select>
+    </label>
+    <label>worktree
+      <select id="d-worktree"></select>
+    </label>
+    <div id="d-new-wt" hidden>
+      <label>new branch <input id="d-branch" placeholder="feat/thing" pattern="[A-Za-z0-9._/-]+"></label>
+      <label>base ref <input id="d-base" placeholder="(default: HEAD)"></label>
+    </div>
+    <label>prompt
+      <textarea id="d-prompt" rows="4" required placeholder="What should this session do?"></textarea>
+    </label>
+    <details>
+      <summary>options</summary>
+      <label>name <input id="d-name" placeholder="(auto)"></label>
+      <label>model <input id="d-model" placeholder="(default)"></label>
+    </details>
+    <p class="quota">⚡ <span id="sheet-working">0</span> session(s) already working — parallel sessions burn quota linearly</p>
+    <button type="submit" id="d-submit">dispatch</button>
+  </form>
+</aside>
+
 <div id="toast" hidden></div>
 <script type="module" src="/app.js"></script>
 </body>

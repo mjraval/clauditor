@@ -2,14 +2,37 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/rishi/clauditor/internal/api"
+	"github.com/rishi/clauditor/internal/config"
 	"github.com/rishi/clauditor/internal/store"
 	"github.com/rishi/clauditor/web"
 )
+
+// writeLocalToken mints a random bearer token for same-box clients and
+// writes it to <state-dir>/local_token.
+func writeLocalToken() (string, error) {
+	dir, err := config.StateDir()
+	if err != nil {
+		return "", err
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	tok := hex.EncodeToString(buf)
+	if err := os.WriteFile(filepath.Join(dir, "local_token"), []byte(tok), 0o600); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
 
 func cmdServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -42,6 +65,13 @@ func cmdServe(ctx context.Context, args []string) error {
 		TeamDomain:       cfg.Access.TeamDomain,
 		PolicyAUD:        cfg.Access.PolicyAUD,
 		DevInsecureLocal: *devInsecure,
+	}
+	// Local token: lets the TUI (same box, loopback) authenticate without
+	// Access. Regenerated every serve start; 0600 in the state dir.
+	if tok, err := writeLocalToken(); err == nil {
+		auth.LocalToken = tok
+	} else {
+		slog.Warn("could not write local token; TUI will fall back to in-process collectors", "err", err)
 	}
 	if cfg.Access.TeamDomain != "" {
 		auth.JWKS = api.NewJWKS(cfg.Access.TeamDomain)

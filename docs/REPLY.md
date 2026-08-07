@@ -112,3 +112,11 @@ Risks (why this stays experimental): Claude Code's TUI layout is not a
 contract; multi-page dialogs, fullscreen renders, and future redesigns can
 break classification. The blast radius is bounded: worst case the text
 lands in the composer of an attached session and a human sees it on attach.
+
+## M5 update — verified through the full API path (2026-08-06)
+
+`POST /api/v1/sessions/{key}/reply` with `{"text":"a red panda"}` against a
+live blocked session (`waitingFor: input needed`, free-text question):
+delivered and verified in **1.9s**; `claude logs` shows the question, the
+injected answer, and Claude's response. The endpoint stays gated behind
+`actions.experimental_reply = true`.

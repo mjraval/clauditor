@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"log/slog"
 	"net"
 	"net/http"
@@ -25,6 +26,12 @@ type AuthConfig struct {
 	// (--dev-insecure-local). A loud warning is logged every 60s while used.
 	DevInsecureLocal bool
 
+	// LocalToken, when non-empty, lets loopback peers authenticate with
+	// `Authorization: Bearer <token>` instead of an Access JWT. serve writes
+	// it to <state-dir>/local_token (0600) so the TUI on the same box can
+	// talk to the daemon without Access (SPEC §11).
+	LocalToken string
+
 	warnLast time.Time
 	warnMu   sync.Mutex
 }
@@ -41,6 +48,14 @@ func (ac *AuthConfig) Auth(next http.Handler) http.Handler {
 			ac.warnMu.Unlock()
 			next.ServeHTTP(w, r)
 			return
+		}
+		if ac.LocalToken != "" && isLoopback(r.RemoteAddr) {
+			if h, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+				if subtle.ConstantTimeCompare([]byte(h), []byte(ac.LocalToken)) == 1 {
+					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), emailKey, "local")))
+					return
+				}
+			}
 		}
 		if ac.TeamDomain == "" || ac.PolicyAUD == "" {
 			writeErr(w, http.StatusForbidden, "auth_unconfigured",

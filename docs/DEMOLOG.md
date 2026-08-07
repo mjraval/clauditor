@@ -98,3 +98,27 @@ make build
 # tap a counter to filter; tap a row for the session drawer with logs,
 # copy-attach/resume buttons; SSE keeps it live (kill serve → stale banner).
 ```
+
+## M5 — actions in the WebUI + reply
+
+```sh
+# enable actions in config first:
+#   [actions]
+#   enabled = true
+#   experimental_reply = true   # optional
+make build && ./bin/clauditor serve --dev-insecure-local &
+
+# dispatch into a NEW worktree via API (the UI's dispatch sheet does this):
+curl -s -X POST localhost:8790/api/v1/dispatch \
+  -H 'X-Clauditor-Action: 1' -H 'Content-Type: application/json' \
+  -d '{"target":{"repo":"demo-repo","newWorktree":{"branch":"feat/reply-demo"}},
+       "prompt":"Ask me what my favorite animal is and wait.","name":"reply-demo"}' | jq .
+
+# when it blocks, reply through the API (experimental gate):
+curl -s -X POST "localhost:8790/api/v1/sessions/$KEY/reply" \
+  -H 'X-Clauditor-Action: 1' -H 'Content-Type: application/json' \
+  -d '{"text":"a red panda"}'
+# → {"status":"delivered"}   (verified live; transcript in docs/REPLY.md)
+
+# in the browser: + dispatch FAB (with working-count), per-session
+# stop / respawn / open-in-tmux / reply buttons in the drawer.
