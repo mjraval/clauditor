@@ -57,3 +57,32 @@ make build
 
 Verified live 2026-08-06: 8 sessions across 6 repos, dirty dots, tmux
 targets, working/idle states — including this build session itself.
+
+## M3 — HTTP API
+
+```sh
+make build
+./bin/clauditor serve --dev-insecure-local &   # loopback dev mode (no Access JWT)
+
+curl -s localhost:8790/healthz | jq .
+# {"collectors":{"claude":4,"git":4,"tmux":4},"ok":true,"version":"…"}
+
+curl -s localhost:8790/api/v1/state | jq '{version, sessions: (.sessions|length)}'
+
+KEY=$(curl -s localhost:8790/api/v1/state | jq -r '.sessions[0].key')
+curl -s "localhost:8790/api/v1/sessions/$KEY" | jq .
+curl -s "localhost:8790/api/v1/sessions/$KEY/logs?lines=20"
+curl -sN localhost:8790/api/v1/events | head -3     # SSE snapshots
+
+# security gates (actions default OFF):
+curl -s -X POST "localhost:8790/api/v1/sessions/$KEY/stop"
+# {"error":{"code":"actions_disabled","message":"… set actions.enabled = true …"}}
+
+# with actions.enabled=true but no CSRF header:
+# {"error":{"code":"missing_action_header",…}}   ← X-Clauditor-Action: 1 required
+
+# dispatch from the CLI (same code path as POST /api/v1/dispatch):
+./bin/clauditor dispatch --repo clauditor --new-worktree feat/demo "say ok"
+```
+
+Verified live 2026-08-06 (transcript in git history of this file's commit).
