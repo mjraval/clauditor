@@ -26,7 +26,8 @@ const (
 	StateDone    = "done"
 	StateFailed  = "failed"
 	StateStopped = "stopped"
-	StateUnknown = "unknown"
+	StateIdle    = "idle"    // interactive sessions at an empty prompt
+	StateUnknown = "unknown" // tmux-only sessions (no supervisor data)
 )
 
 // ManagedBy labels who created a worktree.
@@ -130,7 +131,7 @@ func SortSessions(ss []*Session) {
 			return 0
 		case s.State == StateWorking:
 			return 1
-		case s.State == StateUnknown:
+		case s.State == StateIdle, s.State == StateUnknown:
 			return 2
 		case s.State == StateDone:
 			return 3

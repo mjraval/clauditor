@@ -42,3 +42,18 @@ less docs/RESEARCH.md      # steal/adapt/avoid + empirical answers
 less docs/REPLY.md         # the reply experiment transcript
 ./scripts/capture-fixtures.sh   # refresh fixtures after a claude upgrade
 ```
+
+## M2 — store + status
+
+```sh
+make build
+
+# grouped fleet table (repo → worktree → sessions) with state glyphs
+./bin/clauditor status
+
+# raw snapshot JSON (version counter, generatedAt, full correlation)
+./bin/clauditor status --json | jq '{version, sessions: (.sessions|length)}'
+```
+
+Verified live 2026-08-06: 8 sessions across 6 repos, dirty dots, tmux
+targets, working/idle states — including this build session itself.

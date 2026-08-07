@@ -1,0 +1,9 @@
+version: "2"
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        # best-effort writes to terminal/table writers; failure is not actionable
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint

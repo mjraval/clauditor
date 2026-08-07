@@ -8,9 +8,6 @@ import (
 // Implemented in later milestones (M2–M7); kept as explicit stubs so the
 // CLI surface is stable from M1 on.
 
-func cmdStatus(ctx context.Context, args []string) error {
-	return fmt.Errorf("status: not implemented yet (M2)")
-}
 
 func cmdServe(ctx context.Context, args []string) error {
 	return fmt.Errorf("serve: not implemented yet (M3)")

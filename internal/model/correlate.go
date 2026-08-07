@@ -49,6 +49,8 @@ func Correlate(in Inputs) *Snapshot {
 				state = StateWorking
 			case "waiting":
 				state = StateBlocked
+			case "idle":
+				state = StateIdle
 			default:
 				state = StateUnknown
 			}
