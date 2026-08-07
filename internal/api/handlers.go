@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/rishi/clauditor/internal/actions"
+	"github.com/rishi/clauditor/internal/collect"
 	"github.com/rishi/clauditor/internal/model"
 )
 
@@ -41,9 +41,6 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ansiRe strips CSI/OSC escape sequences from `claude logs` replays.
-var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[()][0-9A-B]|[\x00-\x08\x0b\x0c\x0e-\x1f]`)
-
 const logByteCap = 256 * 1024
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +59,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case sess.ID != "": // supervisor session → claude logs (raw ANSI replay)
 		out, err = s.Claude.Logs(r.Context(), sess.ID, logByteCap)
-		out = ansiRe.ReplaceAll(out, nil)
+		out = collect.StripANSI(out)
 	case sess.TmuxPaneID != "": // tmux session → capture-pane
 		out, err = s.Tmux.CapturePane(r.Context(), sess.TmuxPaneID, lines, false)
 	default:
