@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/rishi/clauditor/internal/collect"
@@ -24,32 +25,47 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) < 2 {
-		usage()
-		return fmt.Errorf("missing subcommand")
-	}
-	cmd, args := os.Args[1], os.Args[2:]
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Cockpit-first: bare `clauditor` (or `clauditor -flags` with no
+	// subcommand) launches the interactive cockpit. A leading token that
+	// starts with "-" is treated as a flag for the cockpit, not a subcommand.
+	if len(os.Args) < 2 {
+		return cmdTUI(ctx, nil)
+	}
+	if strings.HasPrefix(os.Args[1], "-") {
+		switch os.Args[1] {
+		case "--version", "-v":
+			fmt.Println("clauditor", version.Version)
+			return nil
+		case "--help", "-h":
+			usage()
+			return nil
+		}
+		// Flags with no subcommand → cockpit, flags passed through.
+		return cmdTUI(ctx, os.Args[1:])
+	}
+
+	cmd, args := os.Args[1], os.Args[2:]
+
 	switch cmd {
-	case "version", "--version", "-v":
+	case "version":
 		fmt.Println("clauditor", version.Version)
 		return nil
+	case "tui", "cockpit":
+		return cmdTUI(ctx, args)
 	case "notify":
 		return cmdNotify(ctx, args)
 	case "status":
 		return cmdStatus(ctx, args)
 	case "serve":
 		return cmdServe(ctx, args)
-	case "tui":
-		return cmdTUI(ctx, args)
 	case "dispatch":
 		return cmdDispatch(ctx, args)
 	case "doctor":
 		return cmdDoctor(ctx, args)
-	case "help", "--help", "-h":
+	case "help":
 		usage()
 		return nil
 	default:
@@ -59,18 +75,22 @@ func run() error {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `clauditor — fleet manager for Claude Code sessions
+	fmt.Fprint(os.Stderr, `clauditor — the cockpit for your Claude Code fleet
 
-usage: clauditor <command> [flags]
+usage: clauditor [command] [flags]
+
+  clauditor            launch the cockpit (no config required)
 
 commands:
+  tui       launch the cockpit (alias; also the bare default)
   status    print the fleet as a grouped table (--json for raw snapshot)
   notify    emit state-change events (--stream | --once)
-  serve     run the HTTP daemon (API + WebUI)
-  tui       interactive fleet view
   dispatch  start a background session in a repo/worktree
   doctor    check environment prerequisites
   version   print version
+
+advanced:
+  serve     run the HTTP daemon (API + WebUI) for phone access + notifications
 
 Global flags on every command: --config PATH, --log-level LEVEL
 `)
