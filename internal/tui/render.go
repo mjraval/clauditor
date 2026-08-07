@@ -9,20 +9,35 @@ import (
 	"github.com/rishi/clauditor/internal/model"
 )
 
-// Styles (SPEC §11 / dispatch prompt): needs-input yellow, working green,
-// failed red+underline, idle/terminal dim. Colors are ANSI 16-color codes so
-// they degrade sanely over a 200ms SSH link with a basic terminfo.
+// Cockpit palette — matches the WebUI (web/static): terminal-default bg,
+// accent #d97a4a, needs-input #e8b44c, working #4caf7d, failed #e05d5d,
+// dim #6d7b89. lipgloss down-samples these hexes to the nearest color on a
+// low-color terminal, so they still degrade sanely over a slow SSH link.
 var (
-	styleNeeds     = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
-	styleWorking   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	styleFailed    = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Underline(true)
-	styleDim       = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleRepo      = lipgloss.NewStyle().Bold(true)
-	styleBucket    = lipgloss.NewStyle().Bold(true).Underline(true)
-	styleHeaderBar = lipgloss.NewStyle().Bold(true)
-	styleFooterBar = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleErr       = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)
+	colAccent  = lipgloss.Color("#d97a4a")
+	colNeeds   = lipgloss.Color("#e8b44c")
+	colWorking = lipgloss.Color("#4caf7d")
+	colFailed  = lipgloss.Color("#e05d5d")
+	colDim     = lipgloss.Color("#6d7b89")
 )
+
+var (
+	styleNeeds     = lipgloss.NewStyle().Foreground(colNeeds).Bold(true)
+	styleWorking   = lipgloss.NewStyle().Foreground(colWorking)
+	styleFailed    = lipgloss.NewStyle().Foreground(colFailed).Underline(true)
+	styleDim       = lipgloss.NewStyle().Foreground(colDim)
+	styleAccent    = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleRepo      = lipgloss.NewStyle().Bold(true)
+	styleBucket    = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleFooterBar = lipgloss.NewStyle().Foreground(colDim)
+	styleErr       = lipgloss.NewStyle().Foreground(colFailed).Bold(true)
+	styleCaption   = lipgloss.NewStyle().Foreground(colAccent)
+	stylePreview   = lipgloss.NewStyle().Foreground(colDim)
+	styleSep       = lipgloss.NewStyle().Foreground(colDim)
+)
+
+// spinnerFrames animate the working indicator in the header (braille).
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // glyph is the state marker (same visual language as `clauditor status`,
 // see cmd/clauditor/status.go's glyph()).
@@ -179,10 +194,12 @@ func RenderRow(row Row, width int, selected bool) string {
 	return rowStyle(row, selected).Render(rowLine(row, width, selected))
 }
 
-// HeaderText builds the one-line header: session counts, data-source
-// indicator, and last-refresh age (SPEC §11 acceptance: show enough state
-// to trust a possibly-stale view over a slow link).
-func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Time, filter StateFilter, query string) string {
+// HeaderText builds the one-line cockpit header: app name, needs-input count
+// (yellow ◐), working count (green ●, or the braille spinner frame when any
+// session is working), total, data-source label, and last-refresh age. The
+// spinner argument is the current animation frame ("" = show the static ●).
+// Kept a pure function so the header content is unit-testable without a TTY.
+func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Time, filter StateFilter, query, spinner string) string {
 	needs, working, total := 0, 0, 0
 	if snap != nil {
 		total = len(snap.Sessions)
@@ -198,20 +215,53 @@ func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Ti
 	if !lastFetch.IsZero() {
 		age = humanDur(now.Sub(lastFetch)) + " ago"
 	}
-	line := fmt.Sprintf("clauditor tui · %d need input · %d working · %d total · [%s] · refreshed %s",
-		needs, working, total, sourceLabel, age)
+	workGlyph := "●"
+	if spinner != "" {
+		workGlyph = spinner
+	}
+	dot := styleDim.Render(" · ")
+	segs := []string{
+		styleAccent.Render("clauditor"),
+		styleNeeds.Render(fmt.Sprintf("◐ %d need input", needs)),
+		styleWorking.Render(fmt.Sprintf("%s %d working", workGlyph, working)),
+		styleDim.Render(fmt.Sprintf("%d total", total)),
+		styleDim.Render("["+sourceLabel+"]"),
+		styleDim.Render("refreshed " + age),
+	}
+	line := strings.Join(segs, dot)
 	if filter != FilterAll {
-		line += fmt.Sprintf(" · filter:%s", filter.Label())
+		line += dot + styleDim.Render("filter:"+filter.Label())
 	}
 	if query != "" {
-		line += fmt.Sprintf(" · /%s", query)
+		line += dot + styleDim.Render("/"+query)
 	}
-	return styleHeaderBar.Render(line)
+	return line
 }
 
-// FooterText is the keybinding hint bar.
-func FooterText() string {
-	return styleFooterBar.Render("j/k↑↓ move · / filter · s state · enter open-tmux · l logs · d dispatch · x stop · q quit")
+// footerKind selects which context-sensitive key-hint bar to show.
+type footerKind int
+
+const (
+	footerList footerKind = iota
+	footerPreview
+	footerInput
+	footerLogs
+)
+
+// FooterText is the context-sensitive keybinding hint bar.
+func FooterText(kind footerKind) string {
+	var s string
+	switch kind {
+	case footerLogs:
+		s = "j/k ↑↓ scroll · pgup/pgdn page · q/esc back"
+	case footerInput:
+		s = "enter submit · esc cancel"
+	case footerPreview:
+		s = "tab list · enter attach · r reply · l logs · q quit"
+	default: // footerList
+		s = "↑↓ nav · enter attach · r reply · o tmux · d dispatch · x stop · R respawn · l logs · / filter · s state · tab preview · q quit"
+	}
+	return styleFooterBar.Render(s)
 }
 
 // ErrorText styles a transient error/status line.

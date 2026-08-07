@@ -106,7 +106,7 @@ func TestGlyph(t *testing.T) {
 
 func TestHeaderText_Counts(t *testing.T) {
 	snap := fixtureSnapshot()
-	got := HeaderText(snap, "daemon", time.Now().Add(-5*time.Second), time.Now(), FilterAll, "")
+	got := HeaderText(snap, "daemon", time.Now().Add(-5*time.Second), time.Now(), FilterAll, "", "")
 	for _, want := range []string{"1 need input", "1 working", "4 total", "[daemon]", "5s ago"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("HeaderText missing %q in %q", want, got)
@@ -115,7 +115,7 @@ func TestHeaderText_Counts(t *testing.T) {
 }
 
 func TestHeaderText_ShowsFilterAndQuery(t *testing.T) {
-	got := HeaderText(nil, "in-process", time.Time{}, time.Now(), FilterWorking, "kms")
+	got := HeaderText(nil, "in-process", time.Time{}, time.Now(), FilterWorking, "kms", "")
 	if !strings.Contains(got, "filter:working") {
 		t.Errorf("HeaderText missing filter label: %q", got)
 	}
@@ -127,11 +127,37 @@ func TestHeaderText_ShowsFilterAndQuery(t *testing.T) {
 	}
 }
 
-func TestFooterText_HasAllKeybindings(t *testing.T) {
-	got := FooterText()
-	for _, want := range []string{"/", "s ", "enter", "l ", "d ", "x ", "q "} {
+func TestHeaderText_SpinnerReplacesWorkingGlyph(t *testing.T) {
+	snap := fixtureSnapshot()
+	frame := spinnerFrames[0]
+	got := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", frame)
+	if !strings.Contains(got, frame) {
+		t.Errorf("HeaderText should show the spinner frame %q when passed: %q", frame, got)
+	}
+	// With no spinner frame the static ● is shown instead.
+	plain := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", "")
+	if !strings.Contains(plain, "●") {
+		t.Errorf("HeaderText should show ● when no spinner frame: %q", plain)
+	}
+}
+
+func TestFooterText_ListModeHasCoreKeybindings(t *testing.T) {
+	got := FooterText(footerList)
+	for _, want := range []string{"enter", "r ", "o ", "d ", "x ", "R ", "l ", "/", "s ", "tab", "q "} {
 		if !strings.Contains(got, want) {
-			t.Errorf("FooterText missing %q in %q", want, got)
+			t.Errorf("list footer missing %q in %q", want, got)
 		}
+	}
+}
+
+func TestFooterText_ContextVariants(t *testing.T) {
+	if !strings.Contains(FooterText(footerInput), "submit") {
+		t.Errorf("input footer should mention submit: %q", FooterText(footerInput))
+	}
+	if !strings.Contains(FooterText(footerPreview), "tab") {
+		t.Errorf("preview footer should mention tab: %q", FooterText(footerPreview))
+	}
+	if !strings.Contains(FooterText(footerLogs), "scroll") {
+		t.Errorf("logs footer should mention scroll: %q", FooterText(footerLogs))
 	}
 }
