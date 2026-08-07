@@ -9,11 +9,10 @@ ideas only, re-expressed from scratch.
 1. tmux-claude-session-manager
    https://github.com/craftzdog/tmux-claude-session-manager
    License: MIT — Copyright (c) 2026 Takuya Matsuyama
-   Adapted: the pid→tty→pane correlation approach for mapping supervisor
-   sessions to tmux panes; the attention-first ordering policy
+   Adapted: the pid-subtree↔pane correlation approach for mapping
+   supervisor sessions to tmux panes; the attention-first ordering policy
    (waiting > idle > unknown > busy); use of `tmux capture-pane -e -p`
-   for ANSI-preserving previews; transcript-mtime last-activity lookup via
-   `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<sessionId>.jsonl`.
+   for ANSI-preserving previews.
    All adapted logic re-implemented in Go; no shell code copied verbatim.
 
 2. dmux

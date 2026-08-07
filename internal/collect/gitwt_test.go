@@ -1,6 +1,10 @@
 package collect
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 const porcelainFixture = `worktree /home/u/projects/mono/core-app
 HEAD 4e323dc4eab9ca0ad02f786c13bd63d0102c6594
@@ -44,5 +48,47 @@ func TestParseWorktreePorcelain_RealCapture(t *testing.T) {
 	}
 	if wts[0].Path == "" || wts[0].Head == "" {
 		t.Errorf("real capture first entry incomplete: %+v", wts[0])
+	}
+}
+
+type scriptRunner struct {
+	out map[string][]byte
+	err map[string]error
+}
+
+func (s scriptRunner) Run(_ context.Context, _, name string, args ...string) ([]byte, error) {
+	key := name + " " + strings.Join(args, " ")
+	if e, ok := s.err[key]; ok {
+		return nil, e
+	}
+	return s.out[key], nil
+}
+
+func TestAheadBehind(t *testing.T) {
+	const cmd = "git rev-list --left-right --count @{upstream}...HEAD"
+	tests := []struct {
+		name         string
+		out          string
+		fail         bool
+		wantA, wantB int
+		wantOK       bool
+	}{
+		{"ahead 3 behind 1", "1\t3\n", false, 3, 1, true},
+		{"clean", "0\t0\n", false, 0, 0, true},
+		{"no upstream errors out", "", true, 0, 0, false},
+		{"garbage output", "wat\n", false, 0, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := scriptRunner{out: map[string][]byte{cmd: []byte(tt.out)}, err: map[string]error{}}
+			if tt.fail {
+				r.err[cmd] = &ExitError{Cmd: "git", Code: 128, Stderr: "no upstream"}
+			}
+			c := &GitCollector{Runner: r, AheadBehind: true}
+			a, b, ok := c.aheadBehind(context.Background(), "/wt")
+			if a != tt.wantA || b != tt.wantB || ok != tt.wantOK {
+				t.Errorf("got (%d,%d,%v) want (%d,%d,%v)", a, b, ok, tt.wantA, tt.wantB, tt.wantOK)
+			}
+		})
 	}
 }

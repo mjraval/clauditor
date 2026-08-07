@@ -20,6 +20,9 @@ func (a *Actions) Reply(ctx context.Context, sessionID, text string) error {
 	if text == "" {
 		return errf("bad_request", "reply text is required")
 	}
+	if !ValidSessionID(sessionID) {
+		return errf("bad_target", "session id has unexpected format")
+	}
 	if err := checkDenied(text); err != nil {
 		return err
 	}
@@ -54,13 +57,13 @@ func (a *Actions) Reply(ctx context.Context, sessionID, text string) error {
 		return errf("permission_prompt",
 			"session is at a permission prompt; refusing to answer remotely — use open-in-tmux and attach")
 	case screenNumberedChoice:
-		if !isSingleDigit(text) {
+		if !isChoiceNumber(text) {
 			return errf("bad_request",
-				"session shows a numbered choice; reply with a single digit (or use open-in-tmux)")
+				"session shows a numbered choice; reply with the choice number (or use open-in-tmux)")
 		}
 	}
 
-	before := captureLen(ctx, a, win)
+	before, beforeErr := captureLen(ctx, a, win)
 	if _, err := a.run(ctx, "", a.TmuxBin, "send-keys", "-t", win, "-l", "--", text); err != nil {
 		return err
 	}
@@ -70,10 +73,16 @@ func (a *Actions) Reply(ctx context.Context, sessionID, text string) error {
 	}
 
 	// Verify delivery by screen advancement, not state flip (REPLY.md).
+	// A capture error is never evidence of advancement (QA finding: the -1
+	// sentinel used to compare unequal to a real length and report success).
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(1 * time.Second)
-		if captureLen(ctx, a, win) != before {
+		after, err := captureLen(ctx, a, win)
+		if err != nil || beforeErr != nil {
+			continue
+		}
+		if after != before {
 			return nil
 		}
 	}
@@ -127,14 +136,23 @@ func classifyScreen(screen []byte) screenKind {
 	return screenFreeText
 }
 
-func isSingleDigit(s string) bool {
-	return len(s) == 1 && s[0] >= '0' && s[0] <= '9'
+// isChoiceNumber accepts 1–2 digit menu selections (menus can exceed 9).
+func isChoiceNumber(s string) bool {
+	if len(s) < 1 || len(s) > 2 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
-func captureLen(ctx context.Context, a *Actions, win string) int {
+func captureLen(ctx context.Context, a *Actions, win string) (int, error) {
 	out, err := a.Runner.Run(ctx, "", a.TmuxBin, "capture-pane", "-p", "-t", win)
 	if err != nil {
-		return -1
+		return 0, err
 	}
-	return len(bytes.TrimRight(out, " \n"))
+	return len(bytes.TrimRight(out, " \n")), nil
 }

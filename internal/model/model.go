@@ -74,6 +74,8 @@ type Worktree struct {
 	Dirty     string     `json:"dirty"` // "true" | "false" | "unknown"
 	ManagedBy string     `json:"managedBy"`
 	URL       string     `json:"url,omitempty"`
+	Ahead     *int       `json:"ahead,omitempty"`  // git.ahead_behind only
+	Behind    *int       `json:"behind,omitempty"` // git.ahead_behind only
 	Sessions  []*Session `json:"sessions"`
 }
 
@@ -113,12 +115,17 @@ func (s *Snapshot) SessionByKey(key string) *Session {
 // KeyFor derives a stable synthetic key for a session. Supervisor sessions
 // key on their sessionId (stable across restarts); tmux-only sessions key
 // on pane id + pid (a new claude process in the same pane is a new session).
+// A supervisor entry with a degraded sessionId (schema drift) falls back to
+// the short id, then pid, so two degraded entries can never share a key.
 func KeyFor(kind SessionKind, sessionID, paneID string, pid int) string {
 	switch kind {
 	case KindTmuxInteractive:
 		return fmt.Sprintf("tmux-%s-%d", strings.TrimPrefix(paneID, "%"), pid)
 	default:
-		return "sup-" + sessionID
+		if sessionID != "" {
+			return "sup-" + sessionID
+		}
+		return fmt.Sprintf("sup-pid-%d", pid)
 	}
 }
 

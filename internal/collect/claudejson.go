@@ -69,8 +69,10 @@ func ParseAgentsJSON(data []byte) ([]AgentEntry, error) {
 		if v, err := w.StartedAt.Int64(); err == nil {
 			e.StartedAt = v
 		}
-		// An entry with no identity at all is noise.
-		if e.SessionID == "" && e.ID == "" && e.PID == 0 && e.CWD == "" {
+		// An entry with no identity is noise — and dangerous: identity-less
+		// sessions would collide on the same synthetic key downstream
+		// (QA correctness finding). cwd alone is not identity.
+		if e.SessionID == "" && e.ID == "" && e.PID == 0 {
 			continue
 		}
 		out = append(out, e)

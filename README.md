@@ -56,7 +56,7 @@ All keys from `config.example.toml`, with their defaults:
 | `[poll].git_seconds` | `20` | git worktree-list interval |
 | `[git].dirty_check` | `true` | Run `git status --porcelain` per worktree (2s timeout; `dirty=unknown` on timeout) |
 | `[git].ahead_behind` | `false` | Compute ahead/behind counts vs upstream |
-| `[tmux].heuristics` | `false` | Pane-text state guessing fallback (quarantined, off by default — never overrides supervisor-reported state) |
+| `[tmux].heuristics` | `false` | Reserved for a pane-text state-guessing fallback. **Not implemented** — supervisor state proved sufficient; the key is parsed and ignored (see docs/ARCHITECTURE.md) |
 | `[serve].listen` | `127.0.0.1:8790` | HTTP bind address (loopback-only unless `--i-know-this-is-exposed`) |
 | `[serve].snapshot_file` | `""` | Optional path to atomically write the latest snapshot as JSON, for debugging |
 | `[access].team_domain` | `""` (example shows a placeholder) | Cloudflare Access team domain, e.g. `yourteam.cloudflareaccess.com` |
@@ -74,6 +74,12 @@ All keys from `config.example.toml`, with their defaults:
 - **Loopback bind only.** `serve` refuses to start bound to a non-loopback
   address unless you pass `--i-know-this-is-exposed`. Cloudflare Tunnel
   fronts it; clauditor never listens on a public interface itself.
+- **`--dev-insecure-local` must never run behind an active cloudflared
+  ingress.** cloudflared connects over loopback, so the flag's loopback
+  check cannot tell a local `curl` from a proxied internet request — with
+  both active, every tunneled request bypasses Access validation. Use it
+  only when the tunnel ingress for this hostname is absent/disabled
+  (see deploy/ACCESS.md).
 - **Cloudflare Access JWT validated independently**, in middleware, on
   every `/api/*` route — not just trusted because the tunnel let the
   request through. Reads `Cf-Access-Jwt-Assertion` (falls back to the

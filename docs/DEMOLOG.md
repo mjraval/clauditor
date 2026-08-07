@@ -122,6 +122,7 @@ curl -s -X POST "localhost:8790/api/v1/sessions/$KEY/reply" \
 
 # in the browser: + dispatch FAB (with working-count), per-session
 # stop / respawn / open-in-tmux / reply buttons in the drawer.
+```
 
 ## M6 — TUI
 

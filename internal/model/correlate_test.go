@@ -157,3 +157,41 @@ func keys(s *Snapshot) []string {
 	}
 	return out
 }
+
+// Regression (QA): degraded supervisor entries must not collide on "sup-".
+func TestKeyFor_DegradedIdentity(t *testing.T) {
+	k1 := KeyFor(KindSupervisorBG, "", "", 101)
+	k2 := KeyFor(KindSupervisorBG, "", "", 202)
+	if k1 == k2 || k1 == "sup-" {
+		t.Errorf("degraded keys must not collide: %q vs %q", k1, k2)
+	}
+}
+
+// Regression (QA): interactive sessions claim panes before background ones,
+// deterministically, when both share a pane's pid subtree.
+func TestCorrelate_InteractiveClaimsPaneFirst(t *testing.T) {
+	in := Inputs{
+		Agents: []collect.AgentEntry{
+			// background listed FIRST — sort must still give the pane to interactive
+			{ID: "bg1", SessionID: "s-bg", Kind: "background", State: "working", PID: 702, CWD: "/repos/x"},
+			{SessionID: "s-int", Kind: "interactive", Status: "idle", PID: 701, CWD: "/repos/x"},
+		},
+		Panes: []collect.Pane{
+			{SessionName: "x", WindowIndex: 1, PaneIndex: 1, PaneID: "%9", PanePID: 700, CurrentCommand: "claude", CurrentPath: "/repos/x"},
+		},
+		Procs: []collect.Proc{
+			{PID: 700, PPID: 1, Command: "bash"},
+			{PID: 701, PPID: 700, Command: "claude"},
+			{PID: 702, PPID: 701, Command: "claude"},
+		},
+	}
+	snap := Correlate(in)
+	for _, s := range snap.Sessions {
+		if s.SessionID == "s-int" && s.TmuxPaneID != "%9" {
+			t.Errorf("interactive session should own the pane, got %+v", s)
+		}
+		if s.SessionID == "s-bg" && s.TmuxPaneID == "%9" {
+			t.Errorf("background session must not steal the pane: %+v", s)
+		}
+	}
+}

@@ -41,6 +41,9 @@ func (a *Actions) OpenInTmux(ctx context.Context, s *model.Session) (*OpenInTmux
 	if s.ID == "" {
 		return nil, errf("bad_target", "session %s has no attachable background id", s.Key)
 	}
+	if !ValidSessionID(s.ID) {
+		return nil, errf("bad_target", "session id has unexpected format")
+	}
 	// Idempotent session creation: has-session probe, then new-session -d.
 	if _, err := a.Runner.Run(ctx, "", a.TmuxBin, "has-session", "-t", hiddenSession); err != nil {
 		if _, err := a.run(ctx, "", a.TmuxBin, "new-session", "-d", "-s", hiddenSession); err != nil {

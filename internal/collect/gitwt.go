@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +24,9 @@ type WorktreeInfo struct {
 	Branch    string // short name, e.g. "feat/kms" ("" when detached)
 	Dirty     string // "true" | "false" | "unknown"
 	ManagedBy string // model.ManagedByUser | model.ManagedByClaudeCode
+	Ahead     int    // commits ahead of upstream (git.ahead_behind only)
+	Behind    int    // commits behind upstream (git.ahead_behind only)
+	HasCounts bool   // Ahead/Behind were computed (upstream exists, no error)
 }
 
 // GitCollector discovers repos and their worktrees.
@@ -132,8 +136,33 @@ func (c *GitCollector) Worktrees(ctx context.Context, repo string) ([]WorktreeIn
 		} else {
 			wts[i].Dirty = "unknown"
 		}
+		if c.AheadBehind {
+			wts[i].Ahead, wts[i].Behind, wts[i].HasCounts = c.aheadBehind(ctx, wts[i].Path)
+		}
 	}
 	return wts, nil
+}
+
+// aheadBehind runs `git rev-list --left-right --count @{upstream}...HEAD`
+// (SPEC §5.3). Output is "<behind>\t<ahead>" because upstream is the left
+// side. No upstream (or any error) yields ok=false, never an error.
+func (c *GitCollector) aheadBehind(ctx context.Context, wt string) (ahead, behind int, ok bool) {
+	dctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	out, err := c.Runner.Run(dctx, wt, "git", "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
+	if err != nil {
+		return 0, 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) != 2 {
+		return 0, 0, false
+	}
+	b, err1 := strconv.Atoi(fields[0])
+	a, err2 := strconv.Atoi(fields[1])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return a, b, true
 }
 
 func (c *GitCollector) dirty(ctx context.Context, wt string) string {

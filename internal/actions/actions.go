@@ -5,7 +5,9 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -51,6 +53,15 @@ func checkDenied(inputs ...string) error {
 	return nil
 }
 
+// validSessionIDRe matches claude's short ids and full session UUIDs.
+// Defense in depth: ids come from `claude agents --json` (trusted today),
+// but they end up inside tmux window-command strings — never let anything
+// shell-metacharacter-shaped through (QA security finding, 2026-08-07).
+var validSessionIDRe = regexp.MustCompile(`^[0-9a-fA-F-]{4,64}$`)
+
+// ValidSessionID reports whether id is safe to embed in an attach command.
+func ValidSessionID(id string) bool { return validSessionIDRe.MatchString(id) }
+
 // validBranchRe is the dmux-derived pure predicate (see docs/RESEARCH.md);
 // git check-ref-format semantics approximated: safe charset, no traversal.
 var validBranchRe = regexp.MustCompile(`^[a-zA-Z0-9._/-]+$`)
@@ -90,11 +101,33 @@ func SlugForBranch(branch string) string {
 	return s
 }
 
-// run wraps Runner.Run mapping failures to ActionError.
+// run wraps Runner.Run mapping failures to ActionError. The error message
+// deliberately omits argv: dispatch prompts and reply text ride in args and
+// may contain secrets (SPEC §9) — the full command line is logged at debug
+// only, never returned to HTTP clients.
 func (a *Actions) run(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 	out, err := a.Runner.Run(ctx, dir, name, args...)
 	if err != nil {
-		return out, errf("exec_failed", "%s %s: %v", name, strings.Join(args, " "), err)
+		slog.Debug("action exec failed", "cmd", name, "args", args, "dir", dir, "err", err)
+		return out, errf("exec_failed", "%s %s failed: %v", name, firstArg(args), summarizeExecErr(err))
 	}
 	return out, nil
+}
+
+// firstArg names the subcommand (never user content — prompts are trailing).
+func firstArg(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	return args[0]
+}
+
+// summarizeExecErr keeps exit codes and stderr (diagnostic, produced by the
+// tool) but the caller has already dropped argv (may contain user secrets).
+func summarizeExecErr(err error) string {
+	var xe *collect.ExitError
+	if errors.As(err, &xe) {
+		return fmt.Sprintf("exit %d: %s", xe.Code, strings.TrimSpace(xe.Stderr))
+	}
+	return err.Error()
 }

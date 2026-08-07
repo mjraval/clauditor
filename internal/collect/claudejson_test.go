@@ -137,3 +137,21 @@ func TestParseAgentsJSON_NotArray(t *testing.T) {
 		t.Fatal("non-array input must error (collector-level failure, not empty fleet)")
 	}
 }
+
+// Regression (QA): entries whose only surviving field is cwd (identity
+// fields mistyped away) must be dropped — identity-less sessions collide
+// on synthetic keys downstream.
+func TestParseAgentsJSON_DropsIdentityless(t *testing.T) {
+	data := []byte(`[
+	  {"cwd":"/real/path-a","sessionId":987654321,"kind":"interactive"},
+	  {"cwd":"/real/path-b","sessionId":true,"kind":"interactive"},
+	  {"cwd":"/real/path-c","sessionId":"good-id","kind":"interactive"}
+	]`)
+	entries, err := ParseAgentsJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].SessionID != "good-id" {
+		t.Fatalf("want only the identified entry, got %+v", entries)
+	}
+}

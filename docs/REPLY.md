@@ -46,7 +46,7 @@ Observations that shape the implementation:
 - **Attach renders usably in a scripted window.** ~8s settle was more than
   enough on this box; the implementation polls `capture-pane` for the
   prompt footer (`❯` line) with a 15s timeout instead of sleeping blind.
-- **Numbered-choice prompts**: send only the digit (`send-keys -l "3"`),
+- **Numbered-choice prompts**: send only the choice number (`send-keys -l "3"`, 1–2 digits),
   then `Enter`. Free-text prompts: `send-keys -l -- <text>` then `Enter`
   — always `-l` (literal) and `--` so text starting with `-` or containing
   key names (`Enter`, `Space`, `;`) can't be interpreted (a bug observed
@@ -101,7 +101,7 @@ Sequence, all steps with context timeouts:
    choice / permission prompt.
 4. Permission prompt → abort with `409 permission_prompt` and the
    open-in-tmux hint. Numbered choice → require the reply text to be a
-   single digit, else `422`. Free text → send.
+   1–2 digit choice number, else `422`. Free text → send.
 5. `tmux send-keys -t <win> -l -- <text>`, then `send-keys Enter`.
 6. Verify: capture-pane diff (or `claude logs` growth) within 10s, else
    report `502 delivery_unverified` (the text may still have landed —

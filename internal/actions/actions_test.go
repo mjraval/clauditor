@@ -280,3 +280,44 @@ func TestSlugForBranch(t *testing.T) {
 		}
 	}
 }
+
+func TestIsChoiceNumber(t *testing.T) {
+	good := []string{"1", "9", "10", "42"}
+	bad := []string{"", "a", "1a", "123", "-1", " 1"}
+	for _, s := range good {
+		if !isChoiceNumber(s) {
+			t.Errorf("%q should be a valid choice", s)
+		}
+	}
+	for _, s := range bad {
+		if isChoiceNumber(s) {
+			t.Errorf("%q should be rejected", s)
+		}
+	}
+}
+
+func TestValidSessionID(t *testing.T) {
+	if !ValidSessionID("c89e4641") || !ValidSessionID("f290fb7a-dbaf-4623-914d-87405b8c67a9") {
+		t.Error("real ids should validate")
+	}
+	for _, bad := range []string{"", "x; rm -rf /", "id$(cmd)", "a b", "abc"} {
+		if ValidSessionID(bad) {
+			t.Errorf("%q should be rejected", bad)
+		}
+	}
+}
+
+// Reply and OpenInTmux must refuse shell-metacharacter ids before any exec.
+func TestActions_RejectMalformedIDs(t *testing.T) {
+	f := newFake()
+	a := New(f)
+	if err := a.Reply(context.Background(), "x;evil", "hello"); err == nil {
+		t.Error("Reply accepted a malformed id")
+	}
+	if _, err := a.OpenInTmux(context.Background(), &model.Session{Key: "k", ID: "x;evil"}); err == nil {
+		t.Error("OpenInTmux accepted a malformed id")
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("no exec should happen for malformed ids, got %d calls", len(f.calls))
+	}
+}

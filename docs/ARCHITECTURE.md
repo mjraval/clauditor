@@ -90,3 +90,18 @@ is complete without cross-goroutine merging.
   optional anyway.
 - `claude logs` has no tail flag and emits a raw ANSI screen replay; the
   API strips ANSI server-side and caps at 256 KiB.
+- **`PrivateTmp=no` in the systemd unit** (SPEC §9 says `yes`): clauditor's
+  job requires two sockets that live in the shared /tmp — the user's tmux
+  server socket (`/tmp/tmux-<uid>/`) and Claude Code's daemon socket
+  (`/tmp/cc-daemon-<uid>/`). `PrivateTmp=yes` would sever both, breaking
+  open-in-tmux, reply, and (on some versions) supervisor access. The unit
+  keeps the rest of the hardening (`NoNewPrivileges=yes`) and documents the
+  trade-off inline. Systemd's `BindPaths=` could re-expose just those two
+  dirs, but the socket dir names embed the uid and (for cc-daemon) a hash,
+  making a static unit fragile — revisit if clauditor ever runs multi-user.
+- `GET /api/v1/config` exists beyond SPEC §7.2's route list: the WebUI needs
+  the action gates and URL template at boot. Auth-gated like every read route
+  and exposes no secrets.
+- `tmux.heuristics` and the fsnotify accelerator are parsed-but-reserved:
+  supervisor state proved sufficient in practice; the config keys keep the
+  upgrade path without a breaking change.

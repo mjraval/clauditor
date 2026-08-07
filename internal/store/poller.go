@@ -90,7 +90,13 @@ func (p *Poller) Run(ctx context.Context) {
 			if ok || len(repos) > 0 {
 				p.Store.MarkCollector("git", now)
 			}
-			cachedRepos = repos
+			// Keep the previous good repo list when this tick produced
+			// nothing but repos were expected — a transient git failure must
+			// not dump every session into (loose) for a whole interval
+			// (QA correctness finding).
+			if len(repos) > 0 || len(repoPaths) == 0 {
+				cachedRepos = repos
+			}
 			lastGit = now
 		}
 

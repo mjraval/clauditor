@@ -33,10 +33,20 @@ func Correlate(in Inputs) *Snapshot {
 	}
 	tree := collect.NewPIDTree(in.Procs)
 
+	// Interactive sessions claim panes before background ones: a bg job
+	// launched from inside a pane's shell shares that pane's pid subtree,
+	// and the pane "belongs" to the interactive session a human sees there.
+	// Sorting makes the claim deterministic across polls (QA finding).
+	agents := make([]collect.AgentEntry, len(in.Agents))
+	copy(agents, in.Agents)
+	sort.SliceStable(agents, func(i, j int) bool {
+		return agents[i].Kind == "interactive" && agents[j].Kind != "interactive"
+	})
+
 	// --- sessions from the supervisor -----------------------------------
 	var sessions []*Session
 	claimedPanes := map[string]bool{} // pane id -> consumed by a supervisor session
-	for _, a := range in.Agents {
+	for _, a := range agents {
 		kind := KindSupervisorInteractive
 		if a.Kind == "background" {
 			kind = KindSupervisorBG
@@ -55,8 +65,12 @@ func Correlate(in Inputs) *Snapshot {
 				state = StateUnknown
 			}
 		}
+		ident := a.SessionID
+		if ident == "" {
+			ident = a.ID // schema-drift fallback; parser guarantees some identity
+		}
 		s := &Session{
-			Key:        KeyFor(kind, a.SessionID, "", a.PID),
+			Key:        KeyFor(kind, ident, "", a.PID),
 			Kind:       kind,
 			ID:         a.ID,
 			SessionID:  a.SessionID,
@@ -188,14 +202,19 @@ func buildRepos(infos []collect.RepoInfo) []*Repo {
 		}
 		r := &Repo{Name: name, Path: ri.Path}
 		for _, w := range ri.Worktrees {
-			r.Worktrees = append(r.Worktrees, &Worktree{
+			wt := &Worktree{
 				Path:      w.Path,
 				Branch:    w.Branch,
 				Head:      w.Head,
 				Dirty:     w.Dirty,
 				ManagedBy: w.ManagedBy,
 				Sessions:  []*Session{},
-			})
+			}
+			if w.HasCounts {
+				a, b := w.Ahead, w.Behind
+				wt.Ahead, wt.Behind = &a, &b
+			}
+			r.Worktrees = append(r.Worktrees, wt)
 		}
 		out = append(out, r)
 	}

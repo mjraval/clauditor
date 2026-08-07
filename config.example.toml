@@ -20,7 +20,8 @@ dirty_check  = true
 ahead_behind = false
 
 [tmux]
-heuristics = false            # pane-text state guessing (fallback only)
+heuristics = false            # RESERVED, currently unimplemented — supervisor
+                              # state proved sufficient (docs/ARCHITECTURE.md)
 
 [serve]
 listen = "127.0.0.1:8790"
