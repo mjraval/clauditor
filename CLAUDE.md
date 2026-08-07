@@ -42,6 +42,9 @@ All three must stay green. Never let a test touch the network.
   MIT ports goes in `NOTICE`.
 - Conventional commits, one per coherent change; update `docs/DEMOLOG.md`
   when behavior a human can run changes.
+- **PR-only workflow**: never commit or push directly to `main` — it is
+  branch-protected on GitHub (https://github.com/mjraval/clauditor).
+  Branch from `main`, push the branch, open a PR with `gh pr create`.
 
 ## Testing conventions
 
