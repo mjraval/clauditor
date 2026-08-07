@@ -1,47 +1,78 @@
 # clauditor
 
-Claude + auditor: it doesn't do the work, it watches the work and flags
-who's blocked.
+**The cockpit for your Claude Code fleet.** Run `clauditor` — no config, no
+setup — and you get one screen showing every Claude Code session across all
+your repos and worktrees: who's blocked, who's working, who's done. Attach to
+any of them, reply to a blocked one, or dispatch a new one, without leaving
+the view.
 
-clauditor is a thin, honest aggregation layer over three things that
-already exist and already do the hard part: Claude Code's own background-session
-supervisor (`claude agents --json`), tmux, and git worktrees. It polls all
-three, correlates sessions to repos/worktrees/tmux panes into one snapshot,
-and gives you visibility and light control over a fleet of Claude Code
-sessions running across multiple repos and worktrees on one Ubuntu box —
-from the box itself, from a Mac over SSH, or from a phone through an
-existing Cloudflare Tunnel + Access setup. It deliberately does not
-rebuild session persistence, status detection, or process supervision —
-Claude Code's supervisor already does that.
+clauditor is Claude + auditor: it doesn't do the work, it watches the work and
+flags who's blocked. It's a thin, honest aggregation layer over three things
+that already exist and already do the hard part: Claude Code's own
+background-session supervisor (`claude agents --json`), tmux, and git
+worktrees. It polls all three, correlates sessions to repos/worktrees/tmux
+panes into one snapshot, and gives you visibility and light control over a
+fleet of Claude Code sessions on one Ubuntu box — from the box itself, from a
+Mac over SSH, or (optionally) from a phone. It deliberately does not rebuild
+session persistence, status detection, or process supervision — Claude Code's
+supervisor already does that.
 
 ## Quickstart
 
 ```
-make setup            # one-time: Go toolchain, golangci-lint, shellcheck into ~/.local
-make build             # -> ./bin/clauditor
-./bin/clauditor doctor # environment sanity check (claude/tmux/git versions, config, repos)
-./bin/clauditor notify --once   # single diff against persisted state, for cron
-./bin/clauditor serve  # the HTTP daemon (binds 127.0.0.1:8790 by default)
+make setup     # one-time: Go toolchain, golangci-lint, shellcheck into ~/.local
+make build     # -> ./bin/clauditor
+./bin/clauditor    # launch the cockpit — that's it, no config required
 ```
 
-With `serve` running, in another shell:
+Running `clauditor` with no arguments launches the cockpit. It finds your
+sessions from the supervisor, then figures out which repo each one lives in
+by reading the live sessions' working directories — so it correlates
+sessions to repos and worktrees with **zero configuration**. (Configure
+`repos`/`workspace_dirs` only if you want repos with no live session to show
+up too; see the config reference below.)
 
-```
-curl http://127.0.0.1:8790/healthz
-# {"ok":true,"version":"...","collectors":{"claude":0,"tmux":0,"git":0}}
-```
+## Cockpit
 
-For a persistent install that survives logout and reboot, see
-`deploy/systemd/clauditor.service` — a systemd **user** service, not a
-system service (clauditor needs the login user's `~/.claude`, tmux socket,
-and repo permissions; see that file's header comment for the full
-rationale). `deploy/cloudflared/` and `deploy/ACCESS.md` cover putting it
-behind your existing Cloudflare Tunnel + Access.
+The default view. On a wide terminal (≥110 cols) it's a split: the session
+list on the left, a live preview of the selected session on the right. On a
+narrow terminal the list is full-width and `tab` toggles a full-screen
+preview.
+
+The header shows, at a glance: sessions needing input (yellow ◐), sessions
+working (green ●, with a spinner while any are), the total, the data source
+(`in-process` or `daemon`), and how stale the view is. Sessions are grouped
+by state (needs-input first), then repo, then worktree.
+
+| Key | Action |
+|---|---|
+| `↑`/`↓` or `k`/`j` | move the selection |
+| `enter` | **attach** — `claude attach` a supervisor session, or jump to a tmux-pane session (switch-client inside tmux, else `tmux attach`) |
+| `r` | **reply** inline to a session waiting on input (only when it's blocked and has a background id) |
+| `o` | open the session in a tmux window **without** switching to it |
+| `d` | dispatch a new background session into the selected repo/worktree |
+| `x` | stop the selected session (with confirm) |
+| `R` | respawn a stopped/failed session |
+| `l` | full-screen logs pager for the selection |
+| `/` | filter by substring |
+| `s` | cycle the state filter (all → needs → working → idle → terminal) |
+| `tab` | toggle the preview (narrow terminals) |
+| `q` | quit |
+
+The live preview reads a tmux pane directly (`capture-pane`) when the session
+has one, otherwise it tails `claude logs`. It refreshes on its own 2-second
+tick, independent of the snapshot poll, and only while it's visible.
+
+**Reply trust:** the cockpit's `r` reply is *not* gated behind
+`actions.experimental_reply` — a user sitting at the keyboard has exactly the
+same trust as one who would attach and type the answer themselves, so the
+in-process path lets them reply directly. (The daemon path stays gated and
+returns a 501 when the flag is off — see "Advanced" and `docs/REPLY.md`.)
 
 Config lives at `--config PATH`, else `$XDG_CONFIG_HOME/clauditor/config.toml`,
 else `~/.config/clauditor/config.toml`. Copy `config.example.toml` there and
-adjust — a missing file falls back to defaults (`clauditor doctor` and
-`clauditor status` still run, just against nothing configured).
+adjust — a missing file falls back to defaults, and the cockpit still works
+fully via zero-config discovery.
 
 ## Config reference
 
@@ -66,6 +97,40 @@ All keys from `config.example.toml`, with their defaults:
 | `[dispatch].worktree_base` | `""` | Base dir for new worktrees created via dispatch; default `<repo>/../<repo>-worktrees` |
 | `[links].worktree_url_template` | `""` | e.g. `https://{branch}.dev.example.com`, supports `{branch}`/`{slug}` |
 | `[notify].debounce_seconds` | `30` | Suppress duplicate events for the same session+type within this window |
+
+## Advanced: phone + notifications
+
+The cockpit is the whole product for "I'm at the box (or SSH'd in) and want to
+see my fleet." Everything below is optional and only for reaching the fleet
+from elsewhere — a phone, a Mac, a cron job.
+
+**The daemon (`serve`).** A long-running process that serves the same snapshot
+over HTTP + SSE and hosts the WebUI. The cockpit auto-detects it (via
+`<state>/local_token`) and, when present, shows `[daemon]` instead of
+`[in-process]` and routes actions through it.
+
+```
+./bin/clauditor serve            # binds 127.0.0.1:8790 by default
+curl http://127.0.0.1:8790/healthz
+# {"ok":true,"version":"...","collectors":{"claude":0,"tmux":0,"git":0}}
+```
+
+**Notifications.** `clauditor notify` emits state-change events (e.g. a session
+just became blocked). Stream them to a Mac over SSH, or run `--once` from cron
+for a single diff against persisted state.
+
+```
+./bin/clauditor notify --stream          # long-lived event stream
+./bin/clauditor notify --once            # one diff, for cron
+```
+
+**Persistent install + phone access.** For a daemon that survives logout and
+reboot, see `deploy/systemd/clauditor.service` — a systemd **user** service,
+not a system service (clauditor needs the login user's `~/.claude`, tmux
+socket, and repo permissions; see that file's header comment for the full
+rationale). `deploy/cloudflared/` and `deploy/ACCESS.md` cover putting the
+WebUI behind your existing Cloudflare Tunnel + Access so you can reach it from
+a phone.
 
 ## Security model
 
@@ -104,18 +169,27 @@ All keys from `config.example.toml`, with their defaults:
   for prompt content at all, checked by grepping every `slog.*` call site
   in `internal/api` and `internal/actions`.)
 
-## `clauditor tui` vs agent-deck
+## clauditor vs agent-deck
 
-[agent-deck](https://github.com/asheshgoplani/agent-deck) already exists,
-is good, and is MIT-licensed — clauditor doesn't rebuild it. If you want
-groups, fork, cost tracking, and a rich phone-controlled TUI experience,
-run agent-deck. `clauditor tui` is deliberately minimal: one screen, the
-same grouped fleet view the WebUI shows, for when you're already SSH'd
-into the box and just want a glance without a browser. clauditor's actual
-value-add over agent-deck isn't TUI richness — it's the phone/notify layer:
-`clauditor notify` streaming state-change events to your Mac over SSH, and
-the WebUI reachable from your phone through Cloudflare Access, neither of
-which agent-deck's on-box TUI does.
+[agent-deck](https://github.com/asheshgoplani/agent-deck) already exists, is
+good, and is MIT-licensed — clauditor doesn't rebuild it. They solve
+overlapping problems differently:
+
+- **agent-deck is a multi-tool orchestrator.** It manages agents across
+  several coding tools, with groups, fork, and cost tracking, and its own
+  session lifecycle. If that's what you want, run agent-deck.
+- **clauditor is a Claude-only cockpit.** It's backed by Claude Code's own
+  supervisor rather than reimplementing session state — zero hooks, nothing
+  to install into your Claude config, no shadow lifecycle. It reads what the
+  supervisor already knows and correlates it to tmux and git worktrees. The
+  scope is narrower on purpose: watch a Claude fleet, and attach / reply /
+  dispatch from one screen.
+
+The cockpit does live-preview, inline reply, and attach right from the list.
+clauditor's other value-add over agent-deck's on-box TUI is the optional
+phone/notify layer (see "Advanced"): `clauditor notify` streaming
+state-change events, and a WebUI reachable from your phone through Cloudflare
+Access.
 
 ## Further reading
 

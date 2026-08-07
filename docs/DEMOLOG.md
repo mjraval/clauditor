@@ -151,3 +151,31 @@ loginctl enable-linger $USER
 
 Verified live 2026-08-07: 8 PASS, 1 WARN (supervisor idle — starts on
 demand), 0 FAIL against the real machine.
+
+## Cockpit (bare command)
+
+```sh
+make build
+./bin/clauditor              # the cockpit — no arguments, no config needed
+# ./bin/clauditor tui        # identical (alias)
+
+# Zero-config proof: even pointed at a nonexistent config, sessions still
+# correlate to their repos/worktrees (not all "(loose)") because repo roots
+# are derived from the live sessions' cwds:
+./bin/clauditor --config /nonexistent/nope.toml
+
+# keys: ↑↓/kj move · enter attach · r reply · o open-in-tmux (no switch)
+#       d dispatch · x stop (confirm) · R respawn · l logs · / filter
+#       s state cycle · tab preview (narrow) · q quit
+```
+
+Layout: at ≥110 cols, a split — session list left (~45%), live preview of the
+selection right (tmux capture-pane, else `claude logs`, refreshed every 2s).
+Below 110 cols the list is full-width and `tab` toggles a full-screen preview.
+Header: needs-input (◐) / working (● + spinner) / total counts, data-source
+label, refresh age.
+
+Verified live 2026-08-07 in a 130×35 tmux pane: split layout rendered with 10
+real sessions grouped by state → repo → worktree, animated working spinner,
+live preview streaming a session's transcript, and zero-config discovery
+correlating every session to its repo (0 "(loose)").

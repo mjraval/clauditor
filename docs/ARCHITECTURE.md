@@ -80,6 +80,41 @@ tmux (10s) and git (20s) re-collect within that loop when their interval
 has elapsed, and their last results are reused otherwise, so every snapshot
 is complete without cross-goroutine merging.
 
+## Cockpit pivot (2026-08-07)
+
+The product repositioned from "aggregation daemon with a minimal TUI" to
+"cockpit-first CLI." Three changes, all additive — the daemon, API, WebUI, and
+every subcommand still work unchanged:
+
+- **Bare command is the cockpit.** `clauditor` with no arguments launches the
+  TUI (the old `cmdTUI` path); `clauditor tui` remains as an alias. A leading
+  `-flag` with no subcommand is treated as cockpit flags, not a bad
+  subcommand. `serve` is now documented as "advanced" (phone + notifications),
+  not the headline. Wiring: `cmd/clauditor/main.go`.
+
+- **Zero-config repo discovery.** When neither `repos` nor `workspace_dirs` is
+  configured, the git collector derives repo roots each cycle from the live
+  sessions' cwds (`GitCollector.DiscoverReposAuto`): each distinct cwd →
+  `git rev-parse --show-toplevel` (failure tolerated = not a repo) →
+  `resolveMainRepo` to fold linked worktrees into their main repo → dedupe.
+  Used by both `Fleet.Collect` and `store.Poller`'s git tick (shared helper,
+  no duplication). This makes `clauditor` correlate sessions to repos with no
+  config; configured mode is unchanged (explicit repos/workspace_dirs still
+  win and skip cwd derivation).
+
+- **TUI reply is ungated.** The cockpit's inline `r` reply goes straight
+  through `actions.Reply` on the in-process path — deliberately NOT gated
+  behind `actions.experimental_reply`. Rationale: a user at the physical
+  keyboard has the same trust as one who would `open-in-tmux` and type the
+  answer; the gate exists to protect the *remote* (daemon/phone) path from
+  a not-yet-trusted injection strategy, and that path stays gated (the daemon
+  still returns 501 when the flag is off, surfaced verbatim in the cockpit).
+  The permission-prompt refusal inside `Reply` still applies to both paths.
+
+Supporting refactor: the ANSI-strip regex, previously private to
+`internal/api`, moved to `internal/collect.StripANSI` so the API's logs
+endpoint and the TUI's live-preview pane share one definition.
+
 ## Divergences from SPEC assumptions (per §17.8)
 
 - `claude agents --json` **does** list interactive sessions (SPEC hedged on
