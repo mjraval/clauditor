@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Fake `tmux` for tests. Prints fixtures selected by argv and records every
+# invocation (argv + cwd) to $CLAUDITOR_STUB_LOG.
+# $CLAUDITOR_STUB_PANES points at a list-panes fixture file; when unset,
+# list-panes exits like a missing server.
+set -euo pipefail
+
+if [ -n "${CLAUDITOR_STUB_LOG:-}" ]; then
+  printf 'tmux %s\t%s\n' "$*" "$PWD" >> "$CLAUDITOR_STUB_LOG"
+fi
+
+case "${1:-}" in
+  list-panes)
+    if [ -n "${CLAUDITOR_STUB_PANES:-}" ] && [ -f "$CLAUDITOR_STUB_PANES" ]; then
+      cat "$CLAUDITOR_STUB_PANES"
+    else
+      echo "no server running on /tmp/tmux-1000/default" >&2
+      exit 1
+    fi
+    ;;
+  capture-pane)
+    echo "❯ stub pane content"
+    ;;
+  new-session|new-window|send-keys|kill-window|has-session)
+    exit "${CLAUDITOR_STUB_TMUX_EXIT:-0}"
+    ;;
+  -V)
+    echo "tmux 3.4"
+    ;;
+  *)
+    exit 0
+    ;;
+esac

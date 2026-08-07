@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Fake `claude` for tests. Prints fixtures selected by argv and records every
+# invocation (argv + cwd) to $CLAUDITOR_STUB_LOG for assertion.
+# Fixture selection: $CLAUDITOR_STUB_FIXTURE points at a JSON file for
+# `agents --json`; defaults to an empty array.
+set -euo pipefail
+
+if [ -n "${CLAUDITOR_STUB_LOG:-}" ]; then
+  printf 'claude %s\t%s\n' "$*" "$PWD" >> "$CLAUDITOR_STUB_LOG"
+fi
+
+case "${1:-}" in
+  agents)
+    if [ -n "${CLAUDITOR_STUB_FIXTURE:-}" ] && [ -f "$CLAUDITOR_STUB_FIXTURE" ]; then
+      cat "$CLAUDITOR_STUB_FIXTURE"
+    else
+      echo '[]'
+    fi
+    ;;
+  logs)
+    echo "stub log output for ${2:-?}"
+    ;;
+  stop|respawn)
+    echo "${1}ped ${2:-?}"
+    ;;
+  --version)
+    echo "2.1.223 (Claude Code)"
+    ;;
+  daemon)
+    echo "pid: 12345"
+    ;;
+  --bg|*)
+    # dispatch path: `claude --bg ... "prompt"`
+    echo "backgrounded · stub1234"
+    ;;
+esac
