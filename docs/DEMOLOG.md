@@ -164,18 +164,38 @@ make build
 # are derived from the live sessions' cwds:
 ./bin/clauditor --config /nonexistent/nope.toml
 
-# keys: ↑↓/kj move · enter attach · r reply · o open-in-tmux (no switch)
-#       d dispatch · x stop (confirm) · R respawn · l logs · / filter
-#       s state cycle · tab preview (narrow) · q quit
+# move:   ↑↓/kj select · g/G first/last · ^d/^u half-page
+# act:    enter attach · r reply · o open-in-tmux · d dispatch
+#         x stop (confirm) · R respawn · l logs · D make durable
+# glance: / filter · 1 2 3 4 state (needs/working/idle/done; same key clears)
+#         s cycle state (demoted) · tab preview (narrow) · ? help
+# esc clears overlay → text filter → state filter → nothing (never quits)
+# q / ^c quit instantly · n N h i : reserved (no-op in v1)
 ```
 
-Layout: at ≥110 cols, a split — session list left (~45%), live preview of the
-selection right (tmux capture-pane, else `claude logs`, refreshed every 2s).
-Below 110 cols the list is full-width and `tab` toggles a full-screen preview.
-Header: needs-input (◐) / working (● + spinner) / total counts, data-source
-label, refresh age.
+Layout: at ≥110 cols, a split — session list left (clamp 38–64, ~42%), live
+preview of the selection right (tmux capture-pane, else `claude logs`, refreshed
+every 2s; caption names its source: `pane <target>` vs `logs <id>`). Below 110
+cols the list is full-width and `tab` toggles a full-screen preview. Header:
+needs-input (◐) / working (● + spinner) / total counts, source label, bare
+snapshot age (red `stale Xs — retrying` past 15s, red `tmux scan ✗ Xs` on
+collector failure). Rows drop the state word + short id, carry one badge max
+(`⌁bare` risk wins over `⧉` durability), and right-align age (`3d` past 48h).
+
+Durability: bare interactive sessions (supervisor-interactive, no tmux) wear the
+accent `⌁bare` badge; `D` opens a centered sheet — `t` parks a durable
+`claude --resume` copy in a tmux window (no switch), `b` attaches to background
+from the inside. Already-durable kinds answer `D` with a toast. The contextual
+footer shows ≤6 hints selected by the selection's state, always ending `? help`;
+`?` opens the full key crib whose `sources:` line doubles as the completeness
+report. Empty/first-run/stale states carry their own copy.
 
 Verified live 2026-08-07 in a 130×35 tmux pane: split layout rendered with 10
 real sessions grouped by state → repo → worktree, animated working spinner,
 live preview streaming a session's transcript, and zero-config discovery
 correlating every session to its repo (0 "(loose)").
+
+Verified live 2026-08-08 (v1 cockpit delta) via capture-pane at 80×20, 100×30,
+140×40: buckets, `⌁bare` badges, right-aligned day ages, contextual footer, the
+`?` overlay (with live `sources:` line), the centered make-durable sheet, and
+the no-sessions welcome — no horizontal overflow or torn glyphs at any size.
