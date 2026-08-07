@@ -1,0 +1,123 @@
+# clauditor
+
+Claude + auditor: it doesn't do the work, it watches the work and flags
+who's blocked.
+
+clauditor is a thin, honest aggregation layer over three things that
+already exist and already do the hard part: Claude Code's own background-session
+supervisor (`claude agents --json`), tmux, and git worktrees. It polls all
+three, correlates sessions to repos/worktrees/tmux panes into one snapshot,
+and gives you visibility and light control over a fleet of Claude Code
+sessions running across multiple repos and worktrees on one Ubuntu box —
+from the box itself, from a Mac over SSH, or from a phone through an
+existing Cloudflare Tunnel + Access setup. It deliberately does not
+rebuild session persistence, status detection, or process supervision —
+Claude Code's supervisor already does that.
+
+## Quickstart
+
+```
+make setup            # one-time: Go toolchain, golangci-lint, shellcheck into ~/.local
+make build             # -> ./bin/clauditor
+./bin/clauditor doctor # environment sanity check (claude/tmux/git versions, config, repos)
+./bin/clauditor notify --once   # single diff against persisted state, for cron
+./bin/clauditor serve  # the HTTP daemon (binds 127.0.0.1:8790 by default)
+```
+
+With `serve` running, in another shell:
+
+```
+curl http://127.0.0.1:8790/healthz
+# {"ok":true,"version":"...","collectors":{"claude":0,"tmux":0,"git":0}}
+```
+
+For a persistent install that survives logout and reboot, see
+`deploy/systemd/clauditor.service` — a systemd **user** service, not a
+system service (clauditor needs the login user's `~/.claude`, tmux socket,
+and repo permissions; see that file's header comment for the full
+rationale). `deploy/cloudflared/` and `deploy/ACCESS.md` cover putting it
+behind your existing Cloudflare Tunnel + Access.
+
+Config lives at `--config PATH`, else `$XDG_CONFIG_HOME/clauditor/config.toml`,
+else `~/.config/clauditor/config.toml`. Copy `config.example.toml` there and
+adjust — a missing file falls back to defaults (`clauditor doctor` and
+`clauditor status` still run, just against nothing configured).
+
+## Config reference
+
+All keys from `config.example.toml`, with their defaults:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `repos` | `[]` | Explicit repo roots, always included, never scanned |
+| `workspace_dirs` | `[]` | Directories scanned to depth 2 for `.git` (dir or file); linked worktrees resolve to their main repo and dedupe |
+| `[poll].claude_seconds` | `5` | `claude agents --json` poll interval |
+| `[poll].tmux_seconds` | `10` | tmux pane-scan interval |
+| `[poll].git_seconds` | `20` | git worktree-list interval |
+| `[git].dirty_check` | `true` | Run `git status --porcelain` per worktree (2s timeout; `dirty=unknown` on timeout) |
+| `[git].ahead_behind` | `false` | Compute ahead/behind counts vs upstream |
+| `[tmux].heuristics` | `false` | Pane-text state guessing fallback (quarantined, off by default — never overrides supervisor-reported state) |
+| `[serve].listen` | `127.0.0.1:8790` | HTTP bind address (loopback-only unless `--i-know-this-is-exposed`) |
+| `[serve].snapshot_file` | `""` | Optional path to atomically write the latest snapshot as JSON, for debugging |
+| `[access].team_domain` | `""` (example shows a placeholder) | Cloudflare Access team domain, e.g. `yourteam.cloudflareaccess.com` |
+| `[access].policy_aud` | `""` | AUD tag from the Access application (`deploy/ACCESS.md`) |
+| `[actions].enabled` | `false` | Master gate for mutating endpoints (dispatch/stop/respawn/open-in-tmux/reply) — first deploy is read-only |
+| `[actions].experimental_reply` | `false` | tmux-injection reply strategy (`docs/REPLY.md`); 501 when off |
+| `[dispatch].worktree_base` | `""` | Base dir for new worktrees created via dispatch; default `<repo>/../<repo>-worktrees` |
+| `[links].worktree_url_template` | `""` | e.g. `https://{branch}.dev.example.com`, supports `{branch}`/`{slug}` |
+| `[notify].debounce_seconds` | `30` | Suppress duplicate events for the same session+type within this window |
+
+## Security model
+
+(Full requirements: SPEC.md §9; enforced in `internal/api/middleware.go`.)
+
+- **Loopback bind only.** `serve` refuses to start bound to a non-loopback
+  address unless you pass `--i-know-this-is-exposed`. Cloudflare Tunnel
+  fronts it; clauditor never listens on a public interface itself.
+- **Cloudflare Access JWT validated independently**, in middleware, on
+  every `/api/*` route — not just trusted because the tunnel let the
+  request through. Reads `Cf-Access-Jwt-Assertion` (falls back to the
+  `CF_Authorization` cookie), validates against your team's JWKS,
+  checks `iss`/`aud`/`exp`/`iat`. The authenticated email is logged at
+  `info` on every mutating request.
+- **Actions off by default.** `actions.enabled = false` — the first deploy
+  is read-only. Mutating requests additionally require the
+  `X-Clauditor-Action: 1` header (blunts CSRF from ambient Access
+  cookies), `Content-Type: application/json`, and are per-route rate
+  limited.
+- **No permission-bypass path.** `--dangerously-skip-permissions` and
+  `--permission-mode bypassPermissions` (in any spelling) are rejected
+  wherever they could be smuggled into dispatch — this is a hard deny, not
+  a default that can be turned off.
+- **Prompt bodies are never logged**, at any level. The only thing logged
+  on a mutating request is the route name and the authenticated email
+  (`internal/api/middleware.go:142`) — request bodies, including dispatch
+  prompts and reply text, don't pass through `slog` anywhere in this
+  codebase. (SPEC §9 asks for "debug only, never info"; the actual
+  implementation is stricter than that — there is no logging statement
+  for prompt content at all, checked by grepping every `slog.*` call site
+  in `internal/api` and `internal/actions`.)
+
+## `clauditor tui` vs agent-deck
+
+[agent-deck](https://github.com/asheshgoplani/agent-deck) already exists,
+is good, and is MIT-licensed — clauditor doesn't rebuild it. If you want
+groups, fork, cost tracking, and a rich phone-controlled TUI experience,
+run agent-deck. `clauditor tui` is deliberately minimal: one screen, the
+same grouped fleet view the WebUI shows, for when you're already SSH'd
+into the box and just want a glance without a browser. clauditor's actual
+value-add over agent-deck isn't TUI richness — it's the phone/notify layer:
+`clauditor notify` streaming state-change events to your Mac over SSH, and
+the WebUI reachable from your phone through Cloudflare Access, neither of
+which agent-deck's on-box TUI does.
+
+## Further reading
+
+| Doc | What's in it |
+|---|---|
+| `docs/RESEARCH.md` | Phase 0 recon: steal/adapt/avoid notes on the four reference repos, their license table, and the empirical questions answered on this machine |
+| `docs/ARCHITECTURE.md` | The binary's shape — subcommands, layers, and the design trade-offs behind them |
+| `docs/REPLY.md` | The reply investigation: why tmux-injection shipped as the strategy, and the always-works `open-in-tmux` fallback |
+| `docs/VERIFY.md` | Human checklist for anything that couldn't be fully verified inside the build environment |
+| `docs/DEMOLOG.md` | Exact commands to see each milestone work |
+| `docs/ROADMAP.md` | Tier 2 — the eight items SPEC deferred, written up with enough detail to start implementing from |

@@ -1,0 +1,63 @@
+# deploy/systemd/clauditor.service — clauditor as a systemd USER service.
+#
+# What this is: a persistent, restart-on-failure install of `clauditor
+# serve` that starts at boot/login and survives logout via linger, without
+# ever needing root.
+#
+# Why a *user* service and not a system service (SPEC §12): clauditor's
+# entire job is touching state that belongs to the login user —
+# ~/.claude (Claude Code's credentials and per-user supervisor daemon),
+# the user's tmux server socket (used for open-in-tmux and the reply
+# experiment), and the login user's own repo working trees and file
+# permissions. A locked-down system service (running as a dedicated
+# `clauditor` system user) would need to be re-granted access to all of
+# that by hand — same tmux socket, same ~/.claude, same repo perms — which
+# just re-invents "run as the login user" with extra steps and a wider
+# attack surface (a second UID with the same privileges). Running as a
+# user unit gets all of that for free and is what systemd's user-service
+# feature exists for.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/systemd/clauditor.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now clauditor
+#   loginctl enable-linger $USER   # so it keeps running after you log out/SSH-disconnect
+#
+# Update after `make install` drops a new binary in ~/.local/bin:
+#   systemctl --user restart clauditor
+#
+# Logs:
+#   journalctl --user -u clauditor -f
+
+[Unit]
+Description=clauditor — fleet manager daemon for Claude Code sessions
+After=network.target
+
+[Service]
+ExecStart=%h/.local/bin/clauditor serve
+Restart=on-failure
+RestartSec=5
+
+# Hardening. NoNewPrivileges is free — clauditor never needs setuid/setgid
+# escalation. PrivateTmp is deliberately "no": see the caveat below.
+NoNewPrivileges=yes
+
+# PrivateTmp=no (NOT the generic "yes" recommendation in SPEC §9's hardening
+# checklist): the user's tmux server socket lives at /tmp/tmux-<uid>/ and
+# Claude Code's daemon socket lives under /tmp/cc-daemon-<uid>/ (exact path
+# depends on version/config; see `claude daemon status`). PrivateTmp=yes
+# would give this unit its own empty, unshared /tmp — cutting clauditor off
+# from both the tmux server it needs for open-in-tmux/reply and the
+# supervisor's daemon socket. If a future Claude Code version moves its
+# socket out of /tmp, revisit this; for tmux it's inherent (tmux always
+# uses /tmp for its default socket directory).
+PrivateTmp=no
+
+# Make sure `claude` (wherever `make setup`/the user installed it, e.g.
+# ~/.local/bin, ~/.local/go/bin, or a Homebrew/apt path) is on PATH for the
+# dispatched-session environment too. Adjust to match this machine.
+Environment=PATH=%h/.local/bin:%h/.local/go/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

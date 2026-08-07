@@ -135,3 +135,18 @@ make build
 
 Verified live 2026-08-06 in a 100×30 tmux pane: grouped buckets, glyphs,
 tmux targets, [in-process] source indicator.
+
+## M7 — doctor + deploy
+
+```sh
+make build
+./bin/clauditor doctor        # PASS/WARN/FAIL table; exit 0 unless FAIL
+# deploy as a systemd user service:
+mkdir -p ~/.config/systemd/user && cp deploy/systemd/clauditor.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now clauditor
+loginctl enable-linger $USER
+# Cloudflare: deploy/ACCESS.md + deploy/cloudflared/ingress-snippet.yml
+```
+
+Verified live 2026-08-07: 8 PASS, 1 WARN (supervisor idle — starts on
+demand), 0 FAIL against the real machine.

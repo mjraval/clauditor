@@ -1,0 +1,42 @@
+# deploy/cloudflared/ingress-snippet.yml
+#
+# This is NOT a standalone cloudflared config — it's a snippet to merge
+# into the `ingress:` list of your EXISTING tunnel's config.yml (typically
+# ~/.cloudflared/config.yml or /etc/cloudflared/config.yml). clauditor does
+# not get (or need) its own tunnel; one tunnel can front many hostnames.
+#
+# Where it goes: `ingress` rules are matched top-to-bottom, first match
+# wins, and the list must end with a catch-all. Add this hostname entry
+# ABOVE your existing `service: http_status:404` catch-all line (or above
+# any other rule that would otherwise shadow it), alongside whatever
+# hostnames the tunnel already serves. Example resulting file shape:
+#
+#   tunnel: <your-existing-tunnel-id>
+#   credentials-file: /home/<user>/.cloudflared/<tunnel-id>.json
+#   ingress:
+#     - hostname: some-other-app.yourdomain.com
+#       service: http://127.0.0.1:3000
+#     - hostname: clauditor.yourdomain.com     # <-- the entry below, merged in
+#       service: http://127.0.0.1:8790
+#     - service: http_status:404               # catch-all MUST stay last
+#
+# The entry to add (replace yourdomain.com with your real domain; the port
+# must match [serve].listen in clauditor's config.toml, default 8790):
+
+  - hostname: clauditor.yourdomain.com
+    service: http://127.0.0.1:8790
+
+# clauditor binds 127.0.0.1 ONLY (SPEC §9 — it refuses to start bound to a
+# non-loopback address without --i-know-this-is-exposed). This ingress rule
+# is therefore the only path into it: there is no other route from outside
+# the box, and cloudflared reaching it over loopback is the intended shape,
+# not a bypass of anything.
+#
+# Reload after editing config.yml, either:
+#   cloudflared tunnel ingress validate                 # sanity-check the YAML first
+#   sudo systemctl restart cloudflared                  # if cloudflared runs as a system service
+# or, if you manage the existing tunnel via the Zero Trust dashboard
+# instead of a local config.yml (Networks -> Tunnels -> your tunnel ->
+# Public Hostname), add the hostname there instead — see deploy/ACCESS.md,
+# which covers both paths. No cloudflared reload is needed for
+# dashboard-managed hostnames; it takes effect within seconds.

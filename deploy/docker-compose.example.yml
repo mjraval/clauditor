@@ -1,0 +1,90 @@
+# deploy/docker-compose.example.yml
+#
+# THIS IS AN ANTI-RECOMMENDATION, NOT A SUPPORTED DEPLOYMENT PATH.
+#
+# The supported install is the systemd USER service in deploy/systemd/ —
+# `systemctl --user enable --now clauditor` plus `loginctl enable-linger`.
+# This compose file exists only to make the difficulty of containerizing
+# clauditor explicit, in case someone (future me included) is tempted.
+#
+# clauditor's entire job is touching HOST-USER state: the login user's
+# ~/.claude (Claude Code's credentials and per-user supervisor daemon), the
+# user's tmux server socket, and the login user's own repo working trees
+# and file permissions on disk. A container's whole point is isolating a
+# process from exactly that kind of host state — so every mount and
+# network setting below exists purely to punch a hole back through
+# isolation the container model gives you for free elsewhere. If you find
+# yourself adding a bind mount to make one more feature work, that is a
+# sign to reconsider, not a missing line to add.
+#
+# Structurally plausible, not necessarily runnable as-is — treat it as a
+# checklist of what you would have to get right, not a `docker compose up`
+# starting point.
+
+services:
+  clauditor:
+    image: clauditor:local          # you'd build this yourself; no published image
+    command: ["serve"]
+
+    # Must be the HOST user's numeric uid:gid, exactly. Get it wrong and
+    # every file clauditor touches (worktrees it creates, ~/.claude state)
+    # ends up owned by a uid that doesn't match the host user, breaking
+    # permissions the moment you touch those files outside the container.
+    user: "${UID}:${GID}"
+
+    volumes:
+      # Claude Code's credentials + per-user supervisor state. Mounting
+      # this INTO the container means the container now holds the same
+      # secrets the host process holds — containerizing clauditor buys you
+      # zero isolation from Claude Code's own credentials, since it needs
+      # full read/write access to use `claude` at all.
+      - "${HOME}/.claude:/root/.claude"
+
+      # tmux's server socket directory. Without this, open-in-tmux and the
+      # reply experiment (internal/actions/reply.go) have no tmux server to
+      # talk to — they'd be attaching to a tmux instance that only exists
+      # inside the container, disconnected from the one you actually work
+      # in on the host.
+      - "/tmp/tmux-${UID}:/tmp/tmux-${UID}"
+
+      # Claude Code's daemon socket directory (exact path/version-dependent;
+      # verify with `claude daemon status` on the host first). Same
+      # problem as tmux: the supervisor clauditor talks to must be the
+      # host's supervisor, not a container-local one.
+      - "/tmp/cc-daemon-${UID}:/tmp/cc-daemon-${UID}"
+
+      # Every repo path clauditor manages, individually, because there is
+      # no "mount my home directory's project tree" shortcut that doesn't
+      # also expose everything else under it. This list must be maintained
+      # BY HAND in lockstep with `repos`/`workspace_dirs` in config.toml —
+      # add a repo to the config and forget to add its mount here, and
+      # clauditor silently can't see it. Host systemd has no equivalent
+      # maintenance burden: the process just sees the whole filesystem it's
+      # already running under.
+      - "${HOME}/projects/stables-core-app:${HOME}/projects/stables-core-app"
+      - "${HOME}/projects/monorepo:${HOME}/projects/monorepo"
+      - "${HOME}/projects/clauditor:${HOME}/projects/clauditor"
+      # ... one line per repo/workspace_dir in config.toml, forever.
+
+      - "${HOME}/.config/clauditor:${HOME}/.config/clauditor:ro"
+
+    # Bridge networking buys nothing here and actively gets in the way:
+    # clauditor isn't a network service that benefits from isolation from
+    # the host network (it binds loopback-only by design, SPEC §9) — it
+    # needs to reach the SAME tmux server and Claude supervisor the host
+    # user is using, over the SAME sockets, not a virtual network segment.
+    # host networking is the only mode that doesn't require yet another
+    # layer of port-forwarding for something that gains nothing from being
+    # forwarded.
+    network_mode: host
+
+    restart: unless-stopped
+
+    # A container restart does NOT restart the tmux server or the Claude
+    # supervisor (they live on the host, outside the container's
+    # lifecycle) — but it DOES orphan any `claude --bg` sessions'
+    # expectations about a stable daemon-socket path if the container's
+    # view of /tmp/cc-daemon-${UID} ever diverges from the host's (e.g. a
+    # host reboot rotates the socket dir before the container's mount is
+    # refreshed). Host systemd has no such divergence window because
+    # there's only ever one filesystem view.
