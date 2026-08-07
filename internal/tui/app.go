@@ -34,6 +34,8 @@ const (
 	modeReply
 	modeConfirmStop
 	modeLogs
+	modeHelp    // `?` help overlay
+	modeDurable // make-durable sheet for a bare session
 )
 
 // --- tea.Msg types ----------------------------------------------------------
@@ -104,6 +106,13 @@ type Model struct {
 	logsVP    viewport.Model
 	logsTitle string
 	logsErr   error
+
+	durableSess *model.Session // session the make-durable sheet is acting on
+
+	// first-blocked flash: r reply renders in accent for the one poll cycle
+	// after a blocked session first appears.
+	everBlocked  bool
+	blockedFlash bool
 
 	// live preview
 	showPreview bool // narrow-mode full-screen preview toggle
@@ -283,6 +292,80 @@ func attachTmuxCmd(session string) tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg { return attachDoneMsg{err: err} })
 }
 
+const hiddenTmuxSession = "clauditor"
+
+// openResumeInTmuxCmd opens a new window in the hidden `clauditor` tmux session
+// running `claude --resume <sessionId>` for a bare session, WITHOUT switching to
+// it (§6 `t`: park a durable copy, don't jump to it). Like SwitchTmuxClient it
+// execs tmux directly, because make-durable acts on the user's own tmux server
+// on the same box as the cockpit rather than through the daemon.
+func openResumeInTmuxCmd(ctx context.Context, sess *model.Session) tea.Cmd {
+	return func() tea.Msg {
+		if sess == nil || sess.SessionID == "" {
+			return actionDoneMsg{err: fmt.Errorf("make durable: session has no resumable id")}
+		}
+		if !actions.ValidSessionID(sess.SessionID) {
+			return actionDoneMsg{err: fmt.Errorf("make durable: session id has unexpected format")}
+		}
+		fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+		defer cancel()
+		target, err := openResumeWindow(fctx, sess)
+		if err != nil {
+			return actionDoneMsg{err: fmt.Errorf("make durable: %w", err)}
+		}
+		return actionDoneMsg{text: fmt.Sprintf("durable copy opened in tmux (%s) — original terminal is now stale", target)}
+	}
+}
+
+// openResumeWindow ensures the hidden clauditor tmux session exists, then opens
+// a window running `claude --resume <sessionId>` in the session's cwd. Argv
+// arrays only; the session id is validated by the caller.
+func openResumeWindow(ctx context.Context, sess *model.Session) (string, error) {
+	if err := exec.CommandContext(ctx, "tmux", "has-session", "-t", hiddenTmuxSession).Run(); err != nil {
+		if out, err := exec.CommandContext(ctx, "tmux", "new-session", "-d", "-s", hiddenTmuxSession).CombinedOutput(); err != nil {
+			return "", fmt.Errorf("tmux new-session: %v: %s", err, strings.TrimSpace(string(out)))
+		}
+	}
+	args := []string{"new-window", "-t", hiddenTmuxSession, "-n", safeWindowName(sess), "-P", "-F", "#{session_name}:#{window_index}"}
+	if sess.CWD != "" {
+		args = append(args, "-c", sess.CWD)
+	}
+	args = append(args, "claude --resume "+sess.SessionID)
+	out, err := exec.CommandContext(ctx, "tmux", args...).CombinedOutput() //nolint:gosec // fixed argv; sessionId validated, cwd from supervisor
+	if err != nil {
+		return "", fmt.Errorf("tmux new-window: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	target := strings.TrimSpace(string(out))
+	if target == "" {
+		target = hiddenTmuxSession
+	}
+	return target, nil
+}
+
+// safeWindowName sanitizes a session name into a tmux window name (mirrors
+// actions.shortWindowName, which is unexported).
+func safeWindowName(s *model.Session) string {
+	n := s.Name
+	if n == "" {
+		n = s.SessionID
+	}
+	n = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '-'
+		}
+	}, n)
+	if len(n) > 20 {
+		n = n[:20]
+	}
+	if n == "" {
+		n = "session"
+	}
+	return n
+}
+
 func stopCmd(ctx context.Context, actionC ActionClient, sess *model.Session) tea.Cmd {
 	return func() tea.Msg {
 		fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
@@ -388,6 +471,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			prevSel = s.Key
 		}
 		m.rebuildRows()
+		// First-blocked flash: accent the `r reply` hint for exactly the cycle
+		// a blocked session first appears.
+		if anyBlocked(m.snap) {
+			m.blockedFlash = !m.everBlocked
+			m.everBlocked = true
+		} else {
+			m.blockedFlash = false
+		}
 		var cmds []tea.Cmd
 		// Start the spinner when work appears; it self-stops when work ends.
 		if anyWorking(m.snap) && !m.spinnerOn {
@@ -462,6 +553,18 @@ func anyWorking(snap *model.Snapshot) bool {
 	return false
 }
 
+func anyBlocked(snap *model.Snapshot) bool {
+	if snap == nil {
+		return false
+	}
+	for _, s := range snap.Sessions {
+		if s.NeedsInput() {
+			return true
+		}
+	}
+	return false
+}
+
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeFilter:
@@ -474,6 +577,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case modeLogs:
 		return m.handleLogsKey(msg)
+	case modeHelp:
+		return m.handleHelpKey(msg)
+	case modeDurable:
+		return m.handleDurableKey(msg)
 	default:
 		return m.handleListKey(msg)
 	}
@@ -494,6 +601,33 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = idx
 		}
 		return m, m.previewRefreshCmd()
+	case "g":
+		if idx := FirstSelectable(m.rows); idx >= 0 {
+			m.cursor = idx
+		}
+		return m, m.previewRefreshCmd()
+	case "G":
+		if idx := PrevSelectable(m.rows, 0); idx >= 0 { // wraps backward → last
+			m.cursor = idx
+		}
+		return m, m.previewRefreshCmd()
+	case "ctrl+d":
+		return m.halfPage(true)
+	case "ctrl+u":
+		return m.halfPage(false)
+	case "?":
+		m.mode = modeHelp
+		return m, nil
+	case "esc":
+		return m.escClear()
+	case "1":
+		return m.applyStateFilter(FilterNeeds)
+	case "2":
+		return m.applyStateFilter(FilterWorking)
+	case "3":
+		return m.applyStateFilter(FilterIdle)
+	case "4":
+		return m.applyStateFilter(FilterTerminal)
 	case "/":
 		m.mode = modeFilter
 		m.queryPrev = m.query
@@ -504,6 +638,10 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stateFilter = m.stateFilter.Next()
 		m.rebuildRows()
 		return m, m.previewRefreshCmd()
+	case "n", "N", "h", "i", ":":
+		// Reserved for v1.1 (new session / new task / resume / inspect /
+		// palette). Swallowed in v1 so the features land without stealing a key.
+		return m, nil
 	case "tab":
 		if !wideLayout(m.width) {
 			m.showPreview = !m.showPreview
@@ -569,6 +707,106 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, respawnCmd(m.ctx, m.actionC, sess)
+	case "D":
+		sess := m.selectedSession()
+		if sess == nil {
+			m.statusMsg, m.statusErr = "no session selected", true
+			return m, nil
+		}
+		toast, openSheet := durabilityAction(sess)
+		if openSheet {
+			m.mode = modeDurable
+			m.durableSess = sess
+			return m, nil
+		}
+		m.statusMsg, m.statusErr = toast, false
+		return m, nil
+	}
+	return m, nil
+}
+
+// halfPage moves the cursor a half-body of selectable rows (ctrl+d/ctrl+u),
+// clamping at the ends rather than wrapping.
+func (m Model) halfPage(down bool) (tea.Model, tea.Cmd) {
+	step := bodyHeight(m.height) / 2
+	if step < 1 {
+		step = 1
+	}
+	for i := 0; i < step; i++ {
+		if down {
+			idx := NextSelectable(m.rows, m.cursor)
+			if idx <= m.cursor { // wrapped or none: at the bottom
+				break
+			}
+			m.cursor = idx
+		} else {
+			idx := PrevSelectable(m.rows, m.cursor)
+			if idx < 0 || idx >= m.cursor { // wrapped or none: at the top
+				break
+			}
+			m.cursor = idx
+		}
+	}
+	return m, m.previewRefreshCmd()
+}
+
+// applyStateFilter sets the 1–4 direct state filter, or clears it when the same
+// bucket is pressed again (§4).
+func (m Model) applyStateFilter(f StateFilter) (tea.Model, tea.Cmd) {
+	if m.stateFilter == f {
+		m.stateFilter = FilterAll
+	} else {
+		m.stateFilter = f
+	}
+	m.rebuildRows()
+	return m, m.previewRefreshCmd()
+}
+
+// escClear is the list-mode esc chain: text filter → state filter → nothing.
+// esc never quits (overlays are cleared in their own handlers).
+func (m Model) escClear() (tea.Model, tea.Cmd) {
+	switch {
+	case m.query != "":
+		m.query, m.queryPrev = "", ""
+		m.rebuildRows()
+		return m, m.previewRefreshCmd()
+	case m.stateFilter != FilterAll:
+		m.stateFilter = FilterAll
+		m.rebuildRows()
+		return m, m.previewRefreshCmd()
+	default:
+		return m, nil
+	}
+}
+
+// handleHelpKey: esc or ? closes the help overlay; everything else is swallowed.
+func (m Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "?", "q":
+		m.mode = modeList
+	}
+	return m, nil
+}
+
+// handleDurableKey drives the make-durable sheet (§6): t continues in tmux
+// (parked, not switched), b performs the normal attach, esc cancels.
+func (m Model) handleDurableKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	sess := m.durableSess
+	switch msg.String() {
+	case "t":
+		m.mode = modeList
+		m.durableSess = nil
+		return m, openResumeInTmuxCmd(m.ctx, sess)
+	case "b":
+		m.mode = modeList
+		m.durableSess = nil
+		if sess == nil {
+			return m, nil
+		}
+		return m.attach(sess)
+	case "esc":
+		m.mode = modeList
+		m.durableSess = nil
 	}
 	return m, nil
 }
@@ -696,28 +934,41 @@ func (m Model) View() string {
 	if width <= 0 {
 		width = 100
 	}
+
+	// The `?` overlay is a full-screen takeover (dim scrim + key crib).
+	if m.mode == modeHelp {
+		var ages map[string]int64
+		if m.snap != nil {
+			ages = m.snap.CollectorAges
+		}
+		return strings.Join(helpLines(width, max0(m.height), ages, m.source.Label()), "\n")
+	}
+
 	header := HeaderText(m.snap, m.source.Label(), m.lastFetch, time.Now(), m.stateFilter, m.query, m.spinnerGlyph())
 	bodyH := bodyHeight(m.height)
 
-	var body string
-	var fkind footerKind
+	var body, footer string
 	switch m.mode {
 	case modeLogs:
 		body = m.viewLogs()
-		fkind = footerLogs
+		footer = FooterText(footerLogs)
+	case modeDurable:
+		bg := m.listLinesPlain(width, bodyH)
+		body = strings.Join(overlayCenter(bg, makeDurableSheet(m.durableSess), sheetWidth, width, bodyH), "\n")
+		footer = styleFooterBar.Render("t continue in tmux · b background it · esc cancel")
 	case modeFilter, modeDispatch, modeReply, modeConfirmStop:
 		body = m.viewBody(width, bodyH)
-		fkind = footerInput
+		footer = FooterText(footerInput)
 	default:
 		body = m.viewBody(width, bodyH)
 		if !wideLayout(width) && m.showPreview {
-			fkind = footerPreview
+			footer = FooterText(footerPreview)
 		} else {
-			fkind = footerList
+			footer = styleFooterList(footerForSelection(m.selectedSession()), m.blockedFlash)
 		}
 	}
 
-	return strings.Join([]string{header, body, m.viewStatusLine(), FooterText(fkind)}, "\n")
+	return strings.Join([]string{header, body, m.viewStatusLine(), footer}, "\n")
 }
 
 func (m Model) spinnerGlyph() string {
@@ -742,9 +993,15 @@ func (m Model) viewBody(width, height int) string {
 func (m Model) viewSplit(width, height int) string {
 	const sep = " │ "
 	sepW := len([]rune(sep))
-	listW := (width * 9) / 20 // ~45%
-	if listW < 34 {
-		listW = 34
+	// List width = clamp(38, 42% of width, 64): below 38 the row anatomy can't
+	// hold a name + waitingFor; above 64 a session row is pure padding while the
+	// preview — the pane that shows actual work — starves (§5).
+	listW := width * 42 / 100
+	if listW < 38 {
+		listW = 38
+	}
+	if listW > 64 {
+		listW = 64
 	}
 	previewW := width - listW - sepW
 	if previewW < 16 { // too cramped to split — fall back to list only
@@ -764,23 +1021,102 @@ func (m Model) viewSplit(width, height int) string {
 	return b.String()
 }
 
-// listLines renders the session list as exactly height padded lines.
+// listLines renders the session list as exactly height padded lines, or the
+// appropriate empty/first-run/no-matches state (§5) when there are no rows.
 func (m Model) listLines(width, height int) []string {
-	out := make([]string, 0, height)
 	if len(m.rows) == 0 {
-		msg := "no sessions"
-		if m.fetchErr != nil {
-			msg = "fetch error: " + m.fetchErr.Error()
-		}
-		out = append(out, styleErr.Render(padTrunc(msg, width)))
-	} else {
-		start, end := VisibleWindow(len(m.rows), max0(m.cursor), height)
-		for i := start; i < end; i++ {
-			out = append(out, RenderRow(m.rows[i], width, i == m.cursor))
-		}
+		return centerLines(m.emptyState(width), width, height)
+	}
+	out := make([]string, 0, height)
+	start, end := VisibleWindow(len(m.rows), max0(m.cursor), height)
+	for i := start; i < end; i++ {
+		out = append(out, RenderRow(m.rows[i], width, i == m.cursor))
 	}
 	for len(out) < height {
 		out = append(out, padTrunc("", width))
+	}
+	return out[:height]
+}
+
+// listLinesPlain renders the list as plain (unstyled) width-padded lines, used
+// as the dimmable background behind the make-durable sheet.
+func (m Model) listLinesPlain(width, height int) []string {
+	out := make([]string, 0, height)
+	if len(m.rows) > 0 {
+		start, end := VisibleWindow(len(m.rows), max0(m.cursor), height)
+		for i := start; i < end; i++ {
+			out = append(out, padTrunc(rowLine(m.rows[i], width, i == m.cursor), width))
+		}
+	}
+	for len(out) < height {
+		out = append(out, strings.Repeat(" ", max0(width)))
+	}
+	return out[:max0(height)]
+}
+
+// emptyState returns the styled, horizontally-centered lines for whichever
+// no-rows condition holds (§5, exact copy).
+func (m Model) emptyState(width int) []string {
+	switch {
+	case m.snap == nil: // first fetch not back yet
+		return []string{styleDim.Render(center(m.spinnerGlyph()+" connecting to the Claude supervisor…", width))}
+	case len(m.snap.Sessions) > 0: // sessions exist, filter/query hides them
+		msg := fmt.Sprintf("no %s sessions — esc clears", m.stateFilter.Label())
+		if m.query != "" {
+			msg = fmt.Sprintf("no matches for %q — esc clears", m.query)
+		}
+		return []string{styleDim.Render(center(msg, width))}
+	}
+	// No sessions anywhere: the welcoming empty state.
+	scan := "just now"
+	if !m.lastFetch.IsZero() {
+		scan = humanDur(time.Since(m.lastFetch)) + " ago"
+	}
+	lines := []string{
+		"No Claude sessions anywhere on this box.",
+		fmt.Sprintf("supervisor + tmux scanned %s — a new session appears here within 5s.", scan),
+		"",
+		"  d   dispatch a background task from here",
+		"  or run `claude` in any repo — it shows up live.",
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = styleDim.Render(center(l, width))
+	}
+	return out
+}
+
+// center pads s with equal blanks to sit centered within width.
+func center(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	r := runeLen(s)
+	if r >= width {
+		return truncate(s, width)
+	}
+	left := (width - r) / 2
+	return strings.Repeat(" ", left) + s + strings.Repeat(" ", width-r-left)
+}
+
+// centerLines vertically centers a styled content block within height, padding
+// above and below with dim blank lines.
+func centerLines(content []string, width, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	blank := styleDim.Render(strings.Repeat(" ", max0(width)))
+	out := make([]string, 0, height)
+	top := (height - len(content)) / 2
+	if top < 0 {
+		top = 0
+	}
+	for i := 0; i < top; i++ {
+		out = append(out, blank)
+	}
+	out = append(out, content...)
+	for len(out) < height {
+		out = append(out, blank)
 	}
 	return out[:height]
 }
@@ -823,10 +1159,18 @@ func (m Model) previewCaption(sess *model.Session) string {
 		return "preview · loading…"
 	case m.previewErr != nil:
 		return "preview · error"
-	case !m.previewAt.IsZero():
-		return fmt.Sprintf("preview · %s · %ds", displayName(sess), int(time.Since(m.previewAt).Seconds()))
 	default:
-		return "preview · " + displayName(sess)
+		// Name the source: a live tmux pane and a `claude logs` replay have
+		// different fidelity, so the caption says which one (§5).
+		src := "logs " + sess.ID
+		if previewSourceKind(sess) == previewPane {
+			src = "pane " + sess.TmuxTarget
+		}
+		caption := fmt.Sprintf("preview · %s · %s", displayName(sess), src)
+		if !m.previewAt.IsZero() {
+			caption += fmt.Sprintf(" · %ds", int(time.Since(m.previewAt).Seconds()))
+		}
+		return caption
 	}
 }
 
@@ -879,6 +1223,11 @@ func (m Model) viewStatusLine() string {
 		}
 		return ErrorText(fmt.Sprintf("stop %q? (y/n)", name))
 	default:
+		// A fetch outage is the headline while it lasts: keep the last good
+		// snapshot on screen (§5) and name the next action in red.
+		if m.fetchErr != nil {
+			return ErrorText("supervisor unreachable — is claude installed? retrying…")
+		}
 		if m.statusMsg == "" {
 			return ""
 		}
