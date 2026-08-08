@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // fakeRunner records every invocation and returns scripted output.

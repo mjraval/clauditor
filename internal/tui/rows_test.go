@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 func sess(key, state string, waitingFor string) *model.Session {

@@ -10,10 +10,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rishi/clauditor/internal/api"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/store"
-	"github.com/rishi/clauditor/web"
+	"github.com/mjraval/clauditor/internal/api"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/store"
+	"github.com/mjraval/clauditor/web"
 )
 
 // writeLocalToken mints a random bearer token for same-box clients and

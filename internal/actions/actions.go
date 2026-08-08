@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rishi/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/collect"
 )
 
 // Actions wires the runner and config the handlers need.

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // DispatchRequest is POST /api/v1/dispatch's body (SPEC §7.2).

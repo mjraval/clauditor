@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 func TestDaemonBaseURL(t *testing.T) {

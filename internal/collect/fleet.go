@@ -52,7 +52,7 @@ func (f *Fleet) Collect(ctx context.Context) FleetData {
 		}
 	}
 
-	repoPaths := f.Git.DiscoverRepos(ctx, f.Repos, f.WorkspaceDirs)
+	repoPaths := f.Git.DiscoverReposAuto(ctx, f.Repos, f.WorkspaceDirs, SessionCWDs(d.Agents, d.Panes))
 	for _, rp := range repoPaths {
 		wts, err := f.Git.Worktrees(ctx, rp)
 		if err != nil {
@@ -63,4 +63,22 @@ func (f *Fleet) Collect(ctx context.Context) FleetData {
 		d.Repos = append(d.Repos, RepoInfo{Name: filepath.Base(rp), Path: rp, Worktrees: wts})
 	}
 	return d
+}
+
+// SessionCWDs gathers the cwds of every live session this cycle — both
+// supervisor agents and claude-running tmux panes — for zero-config repo
+// discovery (see GitCollector.DiscoverReposAuto).
+func SessionCWDs(agents []AgentEntry, panes []Pane) []string {
+	out := make([]string, 0, len(agents)+len(panes))
+	for _, a := range agents {
+		if a.CWD != "" {
+			out = append(out, a.CWD)
+		}
+	}
+	for _, p := range panes {
+		if p.CurrentPath != "" {
+			out = append(out, p.CurrentPath)
+		}
+	}
+	return out
 }

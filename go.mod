@@ -1,4 +1,4 @@
-module github.com/rishi/clauditor
+module github.com/mjraval/clauditor
 
 go 1.26.5
 

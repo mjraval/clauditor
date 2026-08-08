@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 func TestStore_VersionMonotonic(t *testing.T) {

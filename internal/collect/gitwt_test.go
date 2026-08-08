@@ -64,6 +64,54 @@ func (s scriptRunner) Run(_ context.Context, _, name string, args ...string) ([]
 	return s.out[key], nil
 }
 
+func TestDiscoverReposAuto_DerivesFromCWDs(t *testing.T) {
+	const (
+		topCmd    = "git rev-parse --path-format=absolute --show-toplevel"
+		commonCmd = "git rev-parse --path-format=absolute --git-common-dir"
+	)
+	// Two agents live in the main checkout, one in a linked worktree; a
+	// fourth cwd is not a repo at all (rev-parse fails).
+	r := scriptRunner{
+		out: map[string][]byte{
+			topCmd:    []byte("/home/u/mono/app-wt/feat\n"), // last write wins per key
+			commonCmd: []byte("/home/u/mono/app/.git\n"),
+		},
+		err: map[string]error{},
+	}
+	// The scriptRunner keys on command+args only (dir is ignored), so all
+	// cwds resolve through the same scripted responses: toplevel then common
+	// dir → the single main repo /home/u/mono/app. That proves the dedupe.
+	c := &GitCollector{Runner: r}
+	got := c.DiscoverReposAuto(context.Background(), nil, nil,
+		[]string{"/home/u/mono/app", "/home/u/mono/app", "/home/u/mono/app-wt/feat"})
+	if len(got) != 1 || got[0] != "/home/u/mono/app" {
+		t.Fatalf("got %v, want [/home/u/mono/app]", got)
+	}
+}
+
+func TestDiscoverReposAuto_ToleratesNonRepoCWD(t *testing.T) {
+	const topCmd = "git rev-parse --path-format=absolute --show-toplevel"
+	r := scriptRunner{
+		out: map[string][]byte{},
+		err: map[string]error{topCmd: &ExitError{Cmd: "git", Code: 128, Stderr: "not a git repository"}},
+	}
+	c := &GitCollector{Runner: r}
+	if got := c.DiscoverReposAuto(context.Background(), nil, nil, []string{"/tmp/not-a-repo"}); len(got) != 0 {
+		t.Fatalf("non-repo cwd should yield no repos, got %v", got)
+	}
+}
+
+func TestDiscoverReposAuto_DefersToConfigured(t *testing.T) {
+	// With explicit repos configured, agent cwds are ignored entirely: the
+	// runner is never asked for a toplevel (configured DiscoverRepos stats the
+	// filesystem instead). A nonexistent repo path yields nothing.
+	c := &GitCollector{Runner: scriptRunner{out: map[string][]byte{}, err: map[string]error{}}}
+	got := c.DiscoverReposAuto(context.Background(), []string{"/no/such/repo"}, nil, []string{"/home/u/mono/app"})
+	if len(got) != 0 {
+		t.Fatalf("configured mode should not derive from cwds; got %v", got)
+	}
+}
+
 func TestAheadBehind(t *testing.T) {
 	const cmd = "git rev-list --left-right --count @{upstream}...HEAD"
 	tests := []struct {

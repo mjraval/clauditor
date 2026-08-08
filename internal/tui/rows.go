@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // RowKind distinguishes header rows (not selectable/navigable) from session

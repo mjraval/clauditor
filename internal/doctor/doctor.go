@@ -20,8 +20,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
 )
 
 // Status is one of the four check outcomes.

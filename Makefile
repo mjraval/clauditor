@@ -2,7 +2,7 @@
 # No GNU-only shell flags; tools resolved from PATH with local fallbacks.
 
 BINARY      := clauditor
-MODULE      := github.com/rishi/clauditor
+MODULE      := github.com/mjraval/clauditor
 BIN_DIR     := bin
 VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X $(MODULE)/internal/version.Version=$(VERSION)

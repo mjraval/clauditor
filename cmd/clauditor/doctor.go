@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/doctor"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/doctor"
 )
 
 // cmdDoctor runs SPEC §12's environment checks and prints a PASS/WARN/FAIL

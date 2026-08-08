@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/model"
-	"github.com/rishi/clauditor/internal/store"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/store"
 )
 
 // Source fetches fleet snapshots. Two implementations: daemonSource talks to
@@ -91,6 +91,20 @@ type LogFetcher interface {
 	FetchLogs(ctx context.Context, sess *model.Session, lines int) (string, error)
 }
 
+// PreviewFetcher is implemented by both sources so the live-preview pane
+// doesn't need to know which one is active. The daemon source reads the
+// authenticated GET /logs endpoint; the in-process source shells out to the
+// collectors directly (pane capture, else `claude logs`).
+type PreviewFetcher interface {
+	FetchPreview(ctx context.Context, sess *model.Session, lines int) (string, error)
+}
+
+// FetchPreview reads the daemon's logs endpoint (already ANSI-stripped
+// server-side) for the preview pane.
+func (d *daemonSource) FetchPreview(ctx context.Context, sess *model.Session, lines int) (string, error) {
+	return d.FetchLogs(ctx, sess, lines)
+}
+
 // FetchLogs fetches a session's log/pane-capture text over HTTP.
 func (d *daemonSource) FetchLogs(ctx context.Context, sess *model.Session, lines int) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
@@ -139,6 +153,23 @@ func (l *localSource) FetchLogs(ctx context.Context, sess *model.Session, lines 
 		return string(out), err
 	default:
 		return "", fmt.Errorf("session has neither a background id nor a tmux pane")
+	}
+}
+
+// FetchPreview is the in-process preview source: a live tmux pane wins (the
+// actual terminal a human sees), otherwise `claude logs` ANSI-stripped. The
+// selection order is previewSourceKind's contract (pane-first), the opposite
+// of FetchLogs (which is ID-first, matching the daemon /logs endpoint).
+func (l *localSource) FetchPreview(ctx context.Context, sess *model.Session, lines int) (string, error) {
+	switch previewSourceKind(sess) {
+	case previewPane:
+		out, err := l.poller.Fleet.Tmux.CapturePane(ctx, sess.TmuxPaneID, lines, false)
+		return string(out), err
+	case previewLogs:
+		out, err := l.poller.Fleet.Claude.Logs(ctx, sess.ID, 256*1024)
+		return string(collect.StripANSI(out)), err
+	default:
+		return "", fmt.Errorf("session has neither a tmux pane nor a background id")
 	}
 }
 

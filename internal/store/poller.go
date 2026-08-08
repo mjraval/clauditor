@@ -5,9 +5,9 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // Poller drives the collectors on their configured cadences and feeds the
@@ -36,6 +36,7 @@ func (p *Poller) RunOnce(ctx context.Context) *model.Snapshot {
 	snap := model.Correlate(model.Inputs{
 		Agents: d.Agents, Panes: d.Panes, Procs: d.Procs, Repos: d.Repos, Now: now,
 	})
+	snap.CollectorAges = p.Store.CollectorAges(now)
 	p.Store.Set(snap)
 	return snap
 }
@@ -76,7 +77,7 @@ func (p *Poller) Run(ctx context.Context) {
 		}
 
 		if now.Sub(lastGit) >= gitIv {
-			repoPaths := p.Fleet.Git.DiscoverRepos(ctx, p.Fleet.Repos, p.Fleet.WorkspaceDirs)
+			repoPaths := p.Fleet.Git.DiscoverReposAuto(ctx, p.Fleet.Repos, p.Fleet.WorkspaceDirs, collect.SessionCWDs(agents, cachedPanes))
 			var repos []collect.RepoInfo
 			ok := true
 			for _, rp := range repoPaths {
@@ -104,6 +105,7 @@ func (p *Poller) Run(ctx context.Context) {
 			Agents: agents, Panes: cachedPanes, Procs: cachedProcs,
 			Repos: cachedRepos, Now: now,
 		})
+		snap.CollectorAges = p.Store.CollectorAges(now)
 		p.Store.Set(snap)
 
 		j := time.Duration((rand.Float64()*0.4 - 0.2) * float64(claudeIv))

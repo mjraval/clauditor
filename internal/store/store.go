@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // Store is the single writer for fleet state.

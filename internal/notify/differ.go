@@ -5,7 +5,7 @@ package notify
 import (
 	"time"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // EventType classifies a state transition.

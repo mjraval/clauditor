@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 
-	"github.com/rishi/clauditor/internal/tui"
+	"github.com/mjraval/clauditor/internal/tui"
 )
 
 // cmdTUI runs the minimal fleet TUI (SPEC §11 / M6). It talks to a running
