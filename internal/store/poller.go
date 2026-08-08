@@ -5,9 +5,9 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // Poller drives the collectors on their configured cadences and feeds the

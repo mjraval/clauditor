@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
 )
 
 // fakeRunner substitutes collect.Runner in unit tests that don't need

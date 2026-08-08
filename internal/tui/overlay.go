@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/rishi/clauditor/internal/version"
+	"github.com/mjraval/clauditor/internal/version"
 )
 
 // helpRows are the two-column GLANCE/ACT body of the `?` overlay (§4). Section

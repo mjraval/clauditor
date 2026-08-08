@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/model"
-	"github.com/rishi/clauditor/internal/store"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/store"
 )
 
 // Source fetches fleet snapshots. Two implementations: daemonSource talks to

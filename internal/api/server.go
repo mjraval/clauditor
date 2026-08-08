@@ -12,11 +12,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rishi/clauditor/internal/actions"
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/store"
-	"github.com/rishi/clauditor/internal/version"
+	"github.com/mjraval/clauditor/internal/actions"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/store"
+	"github.com/mjraval/clauditor/internal/version"
 )
 
 // Server wires everything the handlers need.

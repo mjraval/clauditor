@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishi/clauditor/internal/actions"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/actions"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 func TestDaemonActionClient_StopSendsRequiredHeaders(t *testing.T) {

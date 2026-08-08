@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 func TestPadTrunc(t *testing.T) {

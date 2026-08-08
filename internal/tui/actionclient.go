@@ -11,10 +11,10 @@ import (
 	"net/url"
 	"os/exec"
 
-	"github.com/rishi/clauditor/internal/actions"
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/actions"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // humanReplyErr turns a reply failure into a keyboard-friendly status message.

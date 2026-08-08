@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // keyModel builds a list-mode Model over the shared fixture snapshot with its

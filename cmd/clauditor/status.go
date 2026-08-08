@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishi/clauditor/internal/model"
-	"github.com/rishi/clauditor/internal/store"
+	"github.com/mjraval/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/store"
 )
 
 func cmdStatus(ctx context.Context, args []string) error {

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/version"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/version"
 )
 
 func main() {

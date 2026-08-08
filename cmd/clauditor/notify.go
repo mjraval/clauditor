@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/rishi/clauditor/internal/notify"
+	"github.com/mjraval/clauditor/internal/notify"
 )
 
 func cmdNotify(ctx context.Context, args []string) error {

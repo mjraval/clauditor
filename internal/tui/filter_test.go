@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 func TestStateFilter_Cycle(t *testing.T) {

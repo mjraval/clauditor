@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // hiddenSession is the tmux session clauditor owns for attach windows.

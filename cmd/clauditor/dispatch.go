@@ -5,10 +5,10 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/rishi/clauditor/internal/actions"
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/store"
+	"github.com/mjraval/clauditor/internal/actions"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/store"
 )
 
 func newActions(cfg *config.Config) *actions.Actions {

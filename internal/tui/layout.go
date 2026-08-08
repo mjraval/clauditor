@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // wideThreshold is the terminal width at or above which the cockpit shows the

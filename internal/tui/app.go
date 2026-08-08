@@ -12,9 +12,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/rishi/clauditor/internal/actions"
-	"github.com/rishi/clauditor/internal/config"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/actions"
+	"github.com/mjraval/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // Cockpit palette — matches the WebUI (web/static): terminal-default bg,

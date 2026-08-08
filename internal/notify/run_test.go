@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishi/clauditor/internal/collect"
-	"github.com/rishi/clauditor/internal/config"
+	"github.com/mjraval/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/config"
 )
 
 // TestRunOnce_WithStubbins is the M1 acceptance path: the real collectors

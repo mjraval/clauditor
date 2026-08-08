@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishi/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/collect"
 )
 
 // Inputs carries one cycle's raw collector output into correlation.

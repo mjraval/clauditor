@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 func TestWideLayout_Breakpoint(t *testing.T) {

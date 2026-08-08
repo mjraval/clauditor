@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rishi/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/model"
 )
 
 // durability classifies a session by whether it survives terminal/SSH loss and

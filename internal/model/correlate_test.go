@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishi/clauditor/internal/collect"
+	"github.com/mjraval/clauditor/internal/collect"
 )
 
 // The M2 acceptance scenario (SPEC §7.1): 2 repos, 3 worktrees, supervisor
