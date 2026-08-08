@@ -47,7 +47,7 @@ by state (needs-input first), then repo, then worktree.
 | Key | Action |
 |---|---|
 | `↑`/`↓` or `k`/`j`, `g`/`G`, `ctrl+d`/`ctrl+u` | move the selection / jump to first (the top blocked session) or last / half-page |
-| `enter` | **attach** — `claude attach` a supervisor session, or jump to a tmux-pane session (switch-client inside tmux, else `tmux attach`) |
+| `enter` | **attach** — `claude attach` a supervisor session, or jump to a tmux-pane session (switch-client inside tmux, else `tmux attach`). **Coming back:** press `←` at the session's empty prompt (backgrounds it, cockpit resumes automatically); after a tmux jump, `prefix + L` returns to the cockpit's pane |
 | `r` | **reply** inline to a session waiting on input (only when it's blocked and has a background id) |
 | `D` | **make durable** — on a `⌁bare` session (interactive, not in tmux: dies with its SSH connection) opens a sheet with the honest options; on durable sessions it tells you why you're fine |
 | `o` | open the session in a tmux window **without** switching to it |
