@@ -212,7 +212,10 @@ as the completeness report.
 hints. A sixth color would be worse; dim would bury a data-loss risk.
 
 Terminal-default background always; lipgloss downsampling covers low-color
-SSH. Selection = reverse video of the row's own state color.
+SSH. Selection = one unbroken inverted bar in accent across every row
+segment, with a `▶` prefix (v2 decision, superseding the earlier
+state-tinted-reverse idea: accent's role IS "where you are"; tinting the
+bar by state made the highlight compete with the state glyph).
 
 ### Row anatomy
 
