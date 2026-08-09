@@ -260,3 +260,44 @@ six interactive sessions (`messagingSocketPath: null` in their registry
 files) showed `false`. The TUI's preview caption appends `⇄ peer-reachable`
 for the selected session when true — no change to the row's single badge
 slot.
+
+## Token/cost readout (2026-08-09)
+
+`docs/MESSAGING.md` §4.2's cost estimator: a new `internal/usage` package
+sums per-turn `message.usage` (input/output/cache-read/cache-creation
+tokens, keyed by model — a session can switch models mid-conversation) out
+of the whole transcript file (`internal/transcript.Resolve`, capped at 32MB,
+tail-truncated past that with `Truncated` set), then prices it against a
+dated table (`PricingAsOf`, currently 2026-08-09) covering the Opus/Sonnet/
+Haiku/Fable/Mythos families. An unpriced model reports `CostKnown: false`
+rather than a guessed $0; cache read/write rates are derived from
+Anthropic's published fixed ratio to the input rate (0.1×/1.25×), since
+there's no separate per-model cache price to look up. Cost is int64
+microdollars end to end, formatted to `$X.XX` only at the display edge.
+
+Gated behind `[usage].track_cost` (default off — extra disk IO) and cached
+per `(sessionID, transcript file size+mtime)` in `store.Poller.enrichUsage`,
+a post-correlation step mirroring `EnrichPeerReachable`, so a poll tick with
+no transcript changes never re-reads a session's file. `model.Session`
+carries `Tokens`/`CostMicroUSD`/`CostKnown` (so `/api/v1/state` and `status
+--json` get it for free); the cockpit shows the selected session's tokens +
+cost in the preview caption and a dim fleet-total in the header, both only
+when `track_cost` is on and the session's own `CostKnown` is true; `status
+--cost` (or the config flag) adds the same to the CLI table.
+
+```sh
+./bin/clauditor status --cost --config <cfg-with-usage.track_cost=true>
+```
+
+Verified live 2026-08-09 against real `~/.claude/projects/*.jsonl`
+transcripts on this machine: 7 sessions all reported `costKnown: true`
+(models `claude-opus-5`/`claude-opus-4-8`/`claude-fable-5`, no unpriced
+turns encountered), tokens ranging 317.6k–1.2M and costs $35.47–$466.16,
+fleet total `$1256.25 working` in the header. Cross-checked one session
+(881,985 tokens) against an independent Python re-implementation of the
+same pricing math reading the same file: totals agreed exactly, cost
+agreed to within $0.000001 (per-turn vs. summed-then-rounded microdollar
+rounding). tmux capture-pane at 80×20, 100×30, and 140×40 showed zero
+row/column overflow with cost segments rendered; at 220×40 the preview
+caption's `<tok> tok · $<cost>` fragment was visible in full alongside the
+`⇄ peer-reachable` mention.

@@ -155,7 +155,7 @@ func TestGlyph(t *testing.T) {
 
 func TestHeaderText_Counts(t *testing.T) {
 	snap := fixtureSnapshot()
-	got := HeaderText(snap, "daemon", time.Now().Add(-5*time.Second), time.Now(), FilterAll, "", "")
+	got := HeaderText(snap, "daemon", time.Now().Add(-5*time.Second), time.Now(), FilterAll, "", "", false)
 	for _, want := range []string{"1 need input", "1 working", "4 total", "[daemon]", "5s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("HeaderText missing %q in %q", want, got)
@@ -164,7 +164,7 @@ func TestHeaderText_Counts(t *testing.T) {
 }
 
 func TestHeaderText_ShowsFilterAndQuery(t *testing.T) {
-	got := HeaderText(nil, "in-process", time.Time{}, time.Now(), FilterWorking, "kms", "")
+	got := HeaderText(nil, "in-process", time.Time{}, time.Now(), FilterWorking, "kms", "", false)
 	if !strings.Contains(got, "filter:working") {
 		t.Errorf("HeaderText missing filter label: %q", got)
 	}
@@ -179,14 +179,37 @@ func TestHeaderText_ShowsFilterAndQuery(t *testing.T) {
 func TestHeaderText_SpinnerReplacesWorkingGlyph(t *testing.T) {
 	snap := fixtureSnapshot()
 	frame := spinnerFrames[0]
-	got := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", frame)
+	got := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", frame, false)
 	if !strings.Contains(got, frame) {
 		t.Errorf("HeaderText should show the spinner frame %q when passed: %q", frame, got)
 	}
 	// With no spinner frame the static ● is shown instead.
-	plain := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", "")
+	plain := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", "", false)
 	if !strings.Contains(plain, "●") {
 		t.Errorf("HeaderText should show ● when no spinner frame: %q", plain)
+	}
+}
+
+func TestHeaderText_CostSegment(t *testing.T) {
+	snap := fixtureSnapshot()
+	// One priced session, one session whose model was never resolved
+	// (CostKnown=false) — the total must include only the known one.
+	snap.Sessions[0].CostKnown = true
+	snap.Sessions[0].CostMicroUSD = 3_400_000 // $3.40
+	snap.Sessions[1].CostKnown = false
+	snap.Sessions[1].CostMicroUSD = 9_999_999 // must be excluded from the total
+
+	off := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", "", false)
+	if strings.Contains(off, "$3.40") {
+		t.Errorf("cost segment should not render when costEnabled=false: %q", off)
+	}
+
+	on := HeaderText(snap, "daemon", time.Now(), time.Now(), FilterAll, "", "", true)
+	if !strings.Contains(on, "$3.40 working") {
+		t.Errorf("HeaderText should show the known-cost fleet total %q: %q", "$3.40 working", on)
+	}
+	if strings.Contains(on, "9999.99") || strings.Contains(on, "13.40") {
+		t.Errorf("fleet total must exclude sessions with CostKnown=false: %q", on)
 	}
 }
 
@@ -285,13 +308,13 @@ func TestHumanAge_TwoComponent(t *testing.T) {
 		d    time.Duration
 		want string
 	}{
-		{3 * time.Second, "0s"},                     // quantized down to a 5s step
-		{47 * time.Second, "45s"},                   // 5s steps
-		{45 * time.Minute, "45m"},                   // single component under an hour
-		{3*time.Hour + 20*time.Minute, "3h 20m"},    // two components
-		{2 * time.Hour, "2h"},                       // secondary dropped when zero
-		{2*24*time.Hour + 5*time.Hour, "2d 5h"},     // days + hours
-		{9 * 24 * time.Hour, "1w 2d"},               // weeks + days
+		{3 * time.Second, "0s"},                  // quantized down to a 5s step
+		{47 * time.Second, "45s"},                // 5s steps
+		{45 * time.Minute, "45m"},                // single component under an hour
+		{3*time.Hour + 20*time.Minute, "3h 20m"}, // two components
+		{2 * time.Hour, "2h"},                    // secondary dropped when zero
+		{2*24*time.Hour + 5*time.Hour, "2d 5h"},  // days + hours
+		{9 * 24 * time.Hour, "1w 2d"},            // weeks + days
 	}
 	for _, c := range cases {
 		if got := humanAge(c.d); got != c.want {

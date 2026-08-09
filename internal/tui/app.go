@@ -15,6 +15,7 @@ import (
 	"github.com/mjraval/clauditor/internal/actions"
 	"github.com/mjraval/clauditor/internal/config"
 	"github.com/mjraval/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/usage"
 )
 
 const (
@@ -124,7 +125,7 @@ type Model struct {
 	blockedFlash bool
 
 	// live preview
-	showPreview   bool   // narrow-mode full-screen preview toggle
+	showPreview   bool // narrow-mode full-screen preview toggle
 	previewKey    string
 	previewGen    uint64 // bumped on every selection move; tags fetches for staleness
 	previewKind   previewKind
@@ -145,11 +146,19 @@ type Model struct {
 
 	// lastFrame is the previously rendered frame, returned while suspended into
 	// an attach so the screen is never blank during the handoff (TUI-CRAFT §4).
-	lastFrame string
+	lastFrame  string
 	suspending bool
 
 	width, height int
 	quitting      bool
+
+	// costEnabled mirrors config.Usage.TrackCost (docs/MESSAGING.md §4.2):
+	// when true, the header shows a dim fleet-total cost segment and the
+	// preview caption shows the selected session's tokens/cost (both only
+	// when the session's own CostKnown is also true — the field carries no
+	// meaning by itself when the poller never populated it). Set once in
+	// Run; zero value (false) keeps every other cockpit path unchanged.
+	costEnabled bool
 }
 
 // NewModel wires a fresh cockpit model around the given source/actionC. inTmux
@@ -188,6 +197,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		actionC = newLocalActionClient(cfg)
 	}
 	m := NewModel(ctx, source, actionC)
+	m.costEnabled = cfg.Usage.TrackCost
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen())
 	_, err = p.Run()
 	return err
@@ -1057,7 +1067,7 @@ func (m Model) renderFrame() string {
 		return clampJoin(lines, width)
 	}
 
-	header := HeaderText(m.snap, m.source.Label(), m.lastFetch, time.Now(), m.stateFilter, m.query, m.spinnerGlyph())
+	header := HeaderText(m.snap, m.source.Label(), m.lastFetch, time.Now(), m.stateFilter, m.query, m.spinnerGlyph(), m.costEnabled)
 	bodyH := bodyHeight(m.height)
 
 	var body []string
@@ -1426,6 +1436,13 @@ func (m Model) previewTitle() string {
 		// messaging (docs/MESSAGING.md §4.1) doesn't warrant a row badge,
 		// but is worth a glyph in the detail caption.
 		parts = append(parts, "⇄ peer-reachable")
+	}
+	if m.costEnabled && sess.CostKnown {
+		// Per-session token/cost readout (docs/MESSAGING.md §4.2), gated on
+		// BOTH the local config flag and the session's own CostKnown — a
+		// session the poller never priced (unknown model, no transcript
+		// yet) stays silent here rather than showing a misleading number.
+		parts = append(parts, usage.FormatTokens(sess.Tokens)+" tok", usage.FormatUSD(sess.CostMicroUSD))
 	}
 	if m.previewKey == sess.Key && !m.previewAt.IsZero() {
 		parts = append(parts, fmt.Sprintf("%ds", int(time.Since(m.previewAt).Seconds())))

@@ -22,6 +22,7 @@ type Config struct {
 	Dispatch Dispatch `toml:"dispatch"`
 	Links    Links    `toml:"links"`
 	Notify   Notify   `toml:"notify"`
+	Usage    Usage    `toml:"usage"`
 }
 
 type Poll struct {
@@ -64,6 +65,14 @@ type Links struct {
 
 type Notify struct {
 	DebounceSeconds int `toml:"debounce_seconds"`
+}
+
+// Usage gates the per-session token/cost readout (docs/MESSAGING.md §4.2,
+// internal/usage). Off by default: computing cost re-reads each session's
+// whole transcript file, which is extra disk IO the poller shouldn't pay
+// for on every fleet unless the user asked for it.
+type Usage struct {
+	TrackCost bool `toml:"track_cost"`
 }
 
 // Default returns the built-in defaults (SPEC §15).

@@ -8,6 +8,7 @@ import (
 	"github.com/mjraval/clauditor/internal/collect"
 	"github.com/mjraval/clauditor/internal/config"
 	"github.com/mjraval/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/usage"
 )
 
 // Poller drives the collectors on their configured cadences and feeds the
@@ -17,6 +18,40 @@ type Poller struct {
 	Fleet *collect.Fleet
 	Store *Store
 	Cfg   *config.Config
+
+	// usageCache backs enrichUsage (docs/MESSAGING.md §4.2). Lazily
+	// created on first use so every existing Poller{...} literal (status,
+	// dispatch, serve, the TUI's in-process fallback) keeps working
+	// unchanged — it only exists at all when [usage].track_cost is on.
+	usageCache *usage.Cache
+}
+
+// enrichUsage is a POST-correlation enrichment step, mirroring
+// model.EnrichPeerReachable: it never influences state, only annotates
+// already-correlated sessions with a token/cost readout. Gated behind
+// [usage].track_cost (default off) because computing cost re-reads each
+// session's whole transcript file — cheap once cached by
+// (sessionID, file size+mtime), but not something every poll tick should
+// pay for by default (SPEC: never hammer disk on the hot poll path).
+func (p *Poller) enrichUsage(snap *model.Snapshot) {
+	if snap == nil || p.Cfg == nil || !p.Cfg.Usage.TrackCost {
+		return
+	}
+	if p.usageCache == nil {
+		p.usageCache = usage.NewCache()
+	}
+	for _, s := range snap.Sessions {
+		if s.SessionID == "" {
+			continue
+		}
+		u, ok := p.usageCache.Get(s.SessionID)
+		if !ok {
+			continue
+		}
+		s.Tokens = u.InputTokens + u.OutputTokens
+		s.CostMicroUSD = u.CostMicroUSD
+		s.CostKnown = u.CostKnown
+	}
 }
 
 // RunOnce performs a single full collection cycle (used by `status` and the
@@ -37,6 +72,7 @@ func (p *Poller) RunOnce(ctx context.Context) *model.Snapshot {
 		Agents: d.Agents, Panes: d.Panes, Procs: d.Procs, Repos: d.Repos, Now: now,
 	})
 	model.EnrichPeerReachable(snap, d.SessionRegs)
+	p.enrichUsage(snap)
 	snap.CollectorAges = p.Store.CollectorAges(now)
 	p.Store.Set(snap)
 	return snap
@@ -120,6 +156,7 @@ func (p *Poller) Run(ctx context.Context) {
 			Repos: cachedRepos, Now: now,
 		})
 		model.EnrichPeerReachable(snap, regs)
+		p.enrichUsage(snap)
 		snap.CollectorAges = p.Store.CollectorAges(now)
 		p.Store.Set(snap)
 

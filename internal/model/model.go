@@ -65,6 +65,18 @@ type Session struct {
 	// Claude session's SendMessage tool. Enrichment only; never a state
 	// authority (see internal/model/enrich.go).
 	PeerReachable bool `json:"peerReachable,omitempty"`
+
+	// Tokens/CostMicroUSD/CostKnown are the optional per-session cost
+	// readout (docs/MESSAGING.md §4.2): total input+output tokens, cost in
+	// microdollars (1e-6 USD — format at the display edge, never as a
+	// float dollar amount), and whether every model the session used had a
+	// confirmed price. Populated by internal/store.Poller from
+	// internal/usage ONLY when [usage].track_cost is enabled — an
+	// unpopulated session simply carries the zero values, which renderers
+	// must treat as "unknown", not "free" (gate display on CostKnown).
+	Tokens       int64 `json:"tokens,omitempty"`
+	CostMicroUSD int64 `json:"costMicroUSD,omitempty"`
+	CostKnown    bool  `json:"costKnown,omitempty"`
 }
 
 // NeedsInput reports whether the session is waiting on a human.

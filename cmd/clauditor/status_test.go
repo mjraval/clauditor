@@ -49,7 +49,7 @@ func m2Snapshot() *model.Snapshot {
 
 func TestRenderStatus_M2Scenario(t *testing.T) {
 	var b strings.Builder
-	renderStatus(&b, m2Snapshot())
+	renderStatus(&b, m2Snapshot(), false)
 	out := b.String()
 
 	for _, want := range []string{
@@ -75,8 +75,48 @@ func TestRenderStatus_M2Scenario(t *testing.T) {
 
 func TestRenderStatus_Empty(t *testing.T) {
 	var b strings.Builder
-	renderStatus(&b, &model.Snapshot{})
+	renderStatus(&b, &model.Snapshot{}, false)
 	if !strings.Contains(b.String(), "no repos configured") {
 		t.Errorf("empty snapshot message wrong: %s", b.String())
+	}
+}
+
+// TestRenderStatus_CostColumn: the --cost flag (or [usage].track_cost)
+// shows a fleet-total header segment and a per-session tok/cost suffix,
+// but only for sessions the poller actually priced (CostKnown) — an
+// unpriced session must not show a misleading "$0.00", and the whole
+// feature must be invisible when showCost is false even if the snapshot
+// carries cost data (e.g. a prior enrichment run).
+func TestRenderStatus_CostColumn(t *testing.T) {
+	snap := m2Snapshot()
+	priced := snap.Sessions[0]
+	priced.CostKnown = true
+	priced.Tokens = 1_200_000
+	priced.CostMicroUSD = 3_400_000 // $3.40
+	unpriced := snap.Sessions[1]
+	unpriced.CostKnown = false
+	unpriced.Tokens = 500
+
+	var off strings.Builder
+	renderStatus(&off, snap, false)
+	if strings.Contains(off.String(), "$3.40") {
+		t.Errorf("cost column should not render when showCost=false:\n%s", off.String())
+	}
+
+	var on strings.Builder
+	renderStatus(&on, snap, true)
+	out := on.String()
+	if !strings.Contains(out, "1.2M tok · $3.40") {
+		t.Errorf("priced session missing tok/cost suffix:\n%s", out)
+	}
+	if !strings.Contains(out, "$3.40 working") {
+		t.Errorf("fleet-total header segment missing:\n%s", out)
+	}
+	// The unpriced session's name should appear without any $ figure right
+	// after it (best-effort substring check: its own line has no "$").
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, displayName(unpriced)) && strings.Contains(line, "$") {
+			t.Errorf("unpriced session line must not show a cost figure: %q", line)
+		}
 	}
 }
