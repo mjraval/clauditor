@@ -173,17 +173,17 @@ accent for one poll cycle.
   ─────────────────────────────────────────────────────────────────────────────
   GLANCE                              ACT ON SELECTION
    /       filter as you type          enter  attach (the obvious thing)
-   1–4     only needs / working /      r      reply to a blocked session
-           idle / done                 o      open in tmux, don't switch
-   esc     clear filter / overlay      D      make durable (bare sessions)
-   tab     fullscreen preview          d      dispatch background task here
-           (narrow terminals)          x      stop… asks first
-                                       R      respawn stopped/failed
-  MOVE                                 l      logs pager
-   j/k ↑↓  select session
-   g / G   first / last               COMING (v1.1): n new session ·
-   ^d/^u   half page                  h resume a conversation · : commands
-   q       quit — instant, no prompt
+   1–4     only needs / working /             come back: ← at the empty
+           idle / done                        prompt · tmux jumps: prefix+L
+   esc     clear filter / overlay      r      reply to a blocked session
+   tab     fullscreen preview          o      open in tmux, don't switch
+           (narrow terminals)          D      make durable (bare sessions)
+                                       d      dispatch background task here
+  MOVE                                 x      stop… asks first
+   j/k ↑↓  select session              R      respawn stopped/failed
+   g / G   first / last                l      logs pager
+   ^d/^u   half page                  COMING (v1.1): n new session ·
+   q       quit — instant, no prompt  h resume conversation · : commands
   ─────────────────────────────────────────────────────────────────────────────
   sources: supervisor ✓ 2s · tmux ✓ 4s · git ✓ 11s          v0.4.0 · in-process
 ```
@@ -246,7 +246,7 @@ NEEDS INPUT (1)
 WORKING (2)
   stables
     main
-    ● payments-recon                                       ⌁bare        2h10m
+    ● payments-recon                                       ⌁bare        2h 10m
 
 58 (list pane at a 140-col split)
 NEEDS INPUT (1)
@@ -256,7 +256,7 @@ NEEDS INPUT (1)
 WORKING (2)
   stables
     main
-    ● payments-recon                             ⌁bare  2h10m
+    ● payments-recon                             ⌁bare  2h 10m
 
 38 (list pane at the 110-col split minimum)
 NEEDS INPUT (1)
@@ -265,7 +265,7 @@ NEEDS INPUT (1)
 >  ◐ auth-flow ref… ⚑ approval  ⧉  12m
 WORKING (2)
   stables · main
-   ● payments-recon      ⌁bare 2h10m
+   ● payments-recon      ⌁bare 2h 10m
 ```
 
 Degradation order as width shrinks: tmux target text → bare `⧉` →
