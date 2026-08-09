@@ -217,6 +217,14 @@ current when this is picked up). Options, roughly S/M/L effort:
 Recommendation: start at S when picked up, upgrade to M once item 5 exists;
 don't build L without a concrete pain point driving it.
 
+
+**Survey update (2026-08-09, lunemis/mux teardown):** mux proves the
+cheap path — per-turn `message.usage` token fields (input/output/cache_read/
+cache_creation) sit in the same transcript JSONL `internal/transcript`
+already parses for previews. Token counts are effectively free; only the
+pricing table needs care (version it, date it, surface staleness — the
+agent-deck lesson). Effort estimate drops accordingly.
+
 ## 7. Worktree merge-back helper (dmux-inspired)
 
 Explicit-confirmation merge flow: given a worktree clauditor already knows
