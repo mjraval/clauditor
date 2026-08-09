@@ -36,6 +36,7 @@ func (p *Poller) RunOnce(ctx context.Context) *model.Snapshot {
 	snap := model.Correlate(model.Inputs{
 		Agents: d.Agents, Panes: d.Panes, Procs: d.Procs, Repos: d.Repos, Now: now,
 	})
+	model.EnrichPeerReachable(snap, d.SessionRegs)
 	snap.CollectorAges = p.Store.CollectorAges(now)
 	p.Store.Set(snap)
 	return snap
@@ -61,6 +62,19 @@ func (p *Poller) Run(ctx context.Context) {
 		agents, claudeErr := p.Fleet.Claude.Agents(ctx, p.Fleet.IncludeAll)
 		if claudeErr == nil {
 			p.Store.MarkCollector("claude", now)
+		}
+
+		// Presence-registry enrichment (docs/MESSAGING.md §4.1): a handful
+		// of small local files, cheap enough to read every claude-cadence
+		// tick alongside the supervisor poll. Best-effort — never blocks or
+		// fails the cycle.
+		sessions := p.Fleet.Sessions
+		if sessions == nil {
+			sessions = collect.NewSessionsCollector()
+		}
+		regs, regErr := sessions.Registry()
+		if regErr != nil {
+			regs = nil
 		}
 
 		if now.Sub(lastTmux) >= tmuxIv {
@@ -105,6 +119,7 @@ func (p *Poller) Run(ctx context.Context) {
 			Agents: agents, Panes: cachedPanes, Procs: cachedProcs,
 			Repos: cachedRepos, Now: now,
 		})
+		model.EnrichPeerReachable(snap, regs)
 		snap.CollectorAges = p.Store.CollectorAges(now)
 		p.Store.Set(snap)
 

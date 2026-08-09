@@ -1421,6 +1421,12 @@ func (m Model) previewTitle() string {
 		}
 	}
 	parts := []string{"PREVIEW", displayName(sess), src}
+	if sess.PeerReachable {
+		// Subtle mention only — reachability via Claude Code's cross-session
+		// messaging (docs/MESSAGING.md §4.1) doesn't warrant a row badge,
+		// but is worth a glyph in the detail caption.
+		parts = append(parts, "⇄ peer-reachable")
+	}
 	if m.previewKey == sess.Key && !m.previewAt.IsZero() {
 		parts = append(parts, fmt.Sprintf("%ds", int(time.Since(m.previewAt).Seconds())))
 	}

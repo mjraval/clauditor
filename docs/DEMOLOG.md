@@ -238,3 +238,25 @@ every size. On 140×40 with a WORKING supervisor session selected, the preview
 showed readable live pane content (`PREVIEW · … · pane claudinator:1.1`); the
 needs-input session's preview showed clean `❯`/`●`/`⚒` transcript lines — no
 word-mash.
+
+## Peer-reachability enrichment (2026-08-09)
+
+`docs/MESSAGING.md` §4.1's presence-registry read: a new `SessionsCollector`
+(`internal/collect/sessions.go`) globs `~/.claude/sessions/*.json` each poll
+cycle and matches entries to correlated sessions by `sessionId`
+(`model.EnrichPeerReachable`), setting `peerReachable: true` when the
+registry shows a live messaging socket + `peerProtocol > 0`. Read-only,
+supplementary — the supervisor poll stays the sole state authority.
+
+```sh
+make build
+./bin/clauditor status --json | jq '.sessions[] | {sessionId, name, peerReachable}'
+```
+
+Verified live 2026-08-09: of 7 concurrent sessions on this machine, the one
+background session with an active `messagingSocketPath`
+(`/run/user/1000/cc-socks/2684716.sock`) showed `"peerReachable": true`; the
+six interactive sessions (`messagingSocketPath: null` in their registry
+files) showed `false`. The TUI's preview caption appends `⇄ peer-reachable`
+for the selected session when true — no change to the row's single badge
+slot.
