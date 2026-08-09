@@ -21,20 +21,9 @@ var (
 	colDim     = lipgloss.Color("#6d7b89")
 )
 
-var (
-	styleNeeds     = lipgloss.NewStyle().Foreground(colNeeds).Bold(true)
-	styleWorking   = lipgloss.NewStyle().Foreground(colWorking)
-	styleFailed    = lipgloss.NewStyle().Foreground(colFailed).Underline(true)
-	styleDim       = lipgloss.NewStyle().Foreground(colDim)
-	styleAccent    = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleRepo      = lipgloss.NewStyle().Bold(true)
-	styleBucket    = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleFooterBar = lipgloss.NewStyle().Foreground(colDim)
-	styleErr       = lipgloss.NewStyle().Foreground(colFailed).Bold(true)
-	styleCaption   = lipgloss.NewStyle().Foreground(colAccent)
-	stylePreview   = lipgloss.NewStyle().Foreground(colDim)
-	styleSep       = lipgloss.NewStyle().Foreground(colDim)
-)
+// Styles are pre-allocated once in initStyles() (theme.go); the color roles
+// above are their inputs. This keeps every per-row/per-frame render allocation
+// out of the hot path (TUI-CRAFT §2).
 
 // spinnerFrames animate the working indicator in the header (braille).
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -81,6 +70,49 @@ func humanDur(d time.Duration) string {
 	}
 }
 
+// humanAge renders a session age as a compact two-component relative string —
+// `45m`, `3h 20m`, `2d 5h`, `1w 2d` — with sub-minute ages quantized to 5s
+// steps (a column ticking every second is motion the eye chases for nothing).
+// This replaces humanDur for row ages (TUI-CRAFT §3); humanDur stays for the
+// single-component chrome timers (freshness chip, collector segments).
+//
+// adapted from agent-deck (MIT) internal/ui/humanize_since.go two-component
+// wording; re-implemented in Go without the "ago" suffix (rows show a duration,
+// not a moment).
+func humanAge(d time.Duration) string {
+	const (
+		day  = 24 * time.Hour
+		week = 7 * day
+	)
+	switch {
+	case d < time.Minute:
+		s := int(d.Seconds())
+		if s < 0 {
+			s = 0
+		}
+		return fmt.Sprintf("%ds", (s/5)*5)
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < day:
+		return twoUnit(d, time.Hour, time.Minute, "h", "m")
+	case d < week:
+		return twoUnit(d, day, time.Hour, "d", "h")
+	default:
+		return twoUnit(d, week, day, "w", "d")
+	}
+}
+
+// twoUnit formats d as "<p><pu> <s><su>", dropping the secondary term when it
+// floors to zero.
+func twoUnit(d, primary, secondary time.Duration, pu, su string) string {
+	p := d / primary
+	s := (d - p*primary) / secondary
+	if s == 0 {
+		return fmt.Sprintf("%d%s", p, pu)
+	}
+	return fmt.Sprintf("%d%s %d%s", p, pu, s, su)
+}
+
 // runeLen is the display width in runes (all glyphs here are single-cell).
 func runeLen(s string) int { return len([]rune(s)) }
 
@@ -115,7 +147,7 @@ func ageText(s *model.Session) string {
 	if s.AgeSeconds <= 0 && s.StartedAt.IsZero() {
 		return ""
 	}
-	return humanDur(time.Duration(s.AgeSeconds) * time.Second)
+	return humanAge(time.Duration(s.AgeSeconds) * time.Second)
 }
 
 // sessionBody builds the plain (unstyled) text for one session row's content
@@ -134,72 +166,70 @@ func sessionBody(s *model.Session, inner int) string {
 		return truncate(g+" "+name, inner)
 	}
 
-	// Right edge reserves the age plus a one-space gap; the left region gets
-	// whatever is left over.
-	leftBudget := inner - runeLen(g) - 1 // glyph + trailing space
+	// Right edge reserves the age plus a one-space gap; the left region — the
+	// name plus its flag and badge — gets whatever remains. The name is never
+	// capped at a fixed width: it expands to fill the budget, and is the LAST
+	// element to shed cells (the §5 degradation order: tmux target text → bare
+	// ⧉ → waitingFor 16→8 → name remainder).
+	rightW := 0
 	if age != "" {
-		leftBudget -= runeLen(age) + 1 // age cell + min gap
+		rightW = runeLen(age) + 1 // age cell + min gap
 	}
+	leftBudget := inner - runeLen(g) - 1 - rightW // glyph + trailing space
 	if leftBudget < 4 {
 		leftBudget = 4
 	}
 
-	bare := sessionBare(s)
-	var badgeFull, badgeMin, finalBadge string
+	// nameFloor is the smallest name we defend before degrading the badge/flag;
+	// once the badge is at its poorest the name absorbs all further shrink.
+	nameFloor := runeLen(name)
+	if nameFloor > 14 {
+		nameFloor = 14
+	}
+
+	// Degradation tiers, richest → poorest, per session kind. Each tier is a
+	// (badge, waitingFor-cap) pair; the name always takes the remainder.
+	type tier struct {
+		badge string
+		wfCap int
+	}
+	var tiers []tier
 	switch {
-	case bare:
-		badgeFull, badgeMin, finalBadge = "⌁bare", "⌁bare", "⌁bare" // never drops
+	case sessionBare(s): // ⌁bare risk badge never drops
+		tiers = []tier{{"⌁bare", 16}, {"⌁bare", 8}, {"⌁bare", 0}}
 	case s.TmuxTarget != "":
-		badgeFull, badgeMin, finalBadge = "⧉ "+s.TmuxTarget, "⧉", ""
+		tiers = []tier{{"⧉ " + s.TmuxTarget, 16}, {"⧉", 16}, {"⧉", 8}, {"", 8}, {"", 0}}
+	default:
+		tiers = []tier{{"", 16}, {"", 8}, {"", 0}}
 	}
 
-	// Degradation candidates, richest → poorest (the §5 order).
-	type cand struct {
-		nameCap, wfCap int
-		badge          string
+	build := func(t tier) (string, int) {
+		fixed := 0
+		wf := ""
+		if s.WaitingFor != "" && t.wfCap > 0 {
+			wf = " ⚑ " + truncate(s.WaitingFor, t.wfCap)
+			fixed += runeLen(wf)
+		}
+		badge := ""
+		if t.badge != "" {
+			badge = " " + t.badge
+			fixed += runeLen(badge)
+		}
+		nameRoom := leftBudget - fixed
+		if nameRoom < 1 {
+			// No room for a name: keep the risk badge/flag, drop the name.
+			return truncate(strings.TrimSpace(wf+badge), leftBudget), fixed
+		}
+		return truncate(name, nameRoom) + wf + badge, fixed
 	}
-	cands := []cand{
-		{24, 16, badgeFull},
-		{24, 16, badgeMin},
-	}
-	if !bare {
-		cands = append(cands, cand{24, 16, ""}) // drop the ⧉ glyph too
-	}
-	cands = append(cands,
-		cand{24, 8, finalBadge},
-		cand{14, 8, finalBadge},
-	)
 
-	build := func(c cand) string {
-		left := truncate(name, c.nameCap)
-		if s.WaitingFor != "" && c.wfCap > 0 {
-			left += " ⚑ " + truncate(s.WaitingFor, c.wfCap)
-		}
-		if c.badge != "" {
-			left += " " + c.badge
-		}
-		return left
-	}
-	left := build(cands[len(cands)-1])
-	for _, c := range cands {
-		if b := build(c); runeLen(b) <= leftBudget {
-			left = b
+	// Pick the richest tier that still leaves the name its floor; fall back to
+	// the poorest tier (name absorbs the shrink) if none do.
+	left, _ := build(tiers[len(tiers)-1])
+	for _, t := range tiers {
+		if _, fixed := build(t); leftBudget-fixed >= nameFloor {
+			left, _ = build(t)
 			break
-		}
-	}
-	if runeLen(left) > leftBudget {
-		// Last resort: sacrifice the name, never the ⌁bare risk badge.
-		suffix := ""
-		if bare {
-			suffix = " ⌁bare"
-		}
-		if room := leftBudget - runeLen(suffix); room < 1 {
-			left = strings.TrimSpace(suffix) // no room for a name: keep just the badge
-		} else {
-			left = truncate(name, room) + suffix
-		}
-		if runeLen(left) > leftBudget {
-			left = truncate(left, leftBudget)
 		}
 	}
 
@@ -220,7 +250,7 @@ func sessionBody(s *model.Session, inner int) string {
 func rowLine(row Row, width int, selected bool) string {
 	marker := "  "
 	if selected {
-		marker = "> "
+		marker = "▶ " // selected row prefix (paired with the inverted bar, §2)
 	}
 	if row.Kind == RowSession {
 		const prefix = 6 // marker(2) + indent(4)

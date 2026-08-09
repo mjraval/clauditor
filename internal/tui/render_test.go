@@ -64,7 +64,7 @@ func TestSessionBody_BadgePriorityAndDegradation(t *testing.T) {
 	if !strings.Contains(wide, "⧉ dev:1.2") {
 		t.Errorf("wide tmux row should show target: %q", wide)
 	}
-	if !strings.HasSuffix(strings.TrimRight(wide, " "), "2h10m") {
+	if !strings.HasSuffix(strings.TrimRight(wide, " "), "2h 10m") {
 		t.Errorf("age should be right-aligned: %q", wide)
 	}
 
@@ -101,10 +101,10 @@ func TestRowLine_SelectedHasMarker(t *testing.T) {
 	row := Row{Kind: RowSession, Session: s}
 	sel := rowLine(row, 0, true)
 	unsel := rowLine(row, 0, false)
-	if !strings.HasPrefix(sel, "> ") {
+	if !strings.HasPrefix(sel, "▶ ") {
 		t.Errorf("selected row should start with cursor marker: %q", sel)
 	}
-	if strings.HasPrefix(unsel, "> ") {
+	if strings.HasPrefix(unsel, "▶ ") {
 		t.Errorf("unselected row should not have cursor marker: %q", unsel)
 	}
 }
@@ -271,6 +271,26 @@ func TestSourcesLine(t *testing.T) {
 	}
 	if got := sourcesLine(map[string]int64{"claude": -1, "tmux": 4, "git": 11}); !strings.Contains(got, "supervisor never") {
 		t.Errorf("never collector should read 'never': %q", got)
+	}
+}
+
+func TestHumanAge_TwoComponent(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{3 * time.Second, "0s"},                     // quantized down to a 5s step
+		{47 * time.Second, "45s"},                   // 5s steps
+		{45 * time.Minute, "45m"},                   // single component under an hour
+		{3*time.Hour + 20*time.Minute, "3h 20m"},    // two components
+		{2 * time.Hour, "2h"},                       // secondary dropped when zero
+		{2*24*time.Hour + 5*time.Hour, "2d 5h"},     // days + hours
+		{9 * 24 * time.Hour, "1w 2d"},               // weeks + days
+	}
+	for _, c := range cases {
+		if got := humanAge(c.d); got != c.want {
+			t.Errorf("humanAge(%s) = %q, want %q", c.d, got, c.want)
+		}
 	}
 }
 
