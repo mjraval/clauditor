@@ -39,6 +39,19 @@ list on the left, a live preview of the selected session on the right. On a
 narrow terminal the list is full-width and `tab` toggles a full-screen
 preview.
 
+**One keystroke from anywhere (recommended):** bind the cockpit to a tmux
+popup so it overlays whatever you're doing — glance, act, esc, and you're
+back where you were:
+
+```tmux
+# ~/.tmux.conf — prefix+a pops the cockpit over the current window
+bind-key a display-popup -E -w 92% -h 88% clauditor
+```
+
+This composes with your existing navigation stack (choose-tree, sesh):
+those answer "take me somewhere"; the popup cockpit answers "who needs me"
+without leaving where you are.
+
 The header shows, at a glance: sessions needing input (yellow ◐), sessions
 working (green ●, with a spinner while any are), the total, the data source
 (`in-process` or `daemon`), and how stale the view is. Sessions are grouped

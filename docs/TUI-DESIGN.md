@@ -428,7 +428,9 @@ source honesty · `humanDur` gains days (`3d`). Bar: a stranger answers
 - `n` **new interactive session**: creates/uses a tmux session named after
   the selected repo, new window running `claude` in that worktree,
   switch-client (workmux's adopt-and-switch recipe). Without a selection,
-  `n` first asks for a repo.
+  `n` first asks for a repo. Session naming follows sesh's convention
+  (git-repo-derived names) so clauditor-created sessions coexist cleanly
+  with a sesh/choose-tree navigation stack.
 - `h` **resume picker**: fullscreen list of recent conversations (from
   supervisor + `~/.claude` history), newest first, same row language;
   `enter` = resume in a tmux window, `esc` back.
@@ -480,6 +482,28 @@ persistence across launches · flat result view when filtering · toast queue.
    reserved keys (`n N h i :`) or the palette, never a frozen one.
 10. Every error string names the next action; no error is a dead end, and
     the cockpit never exits on a collector failure.
+
+---
+
+## 10. Ecosystem positioning (2026-08-09)
+
+The tmux-agent-monitoring space converged fast (tmuxpulse, mux, NTM; sesh
+and choose-tree for navigation). Positioning rules derived from surveying
+them:
+
+- **Never compete on navigation.** sesh + choose-tree own "take me
+  somewhere." Clauditor documents the `display-popup -E` binding (README)
+  so the cockpit overlays any workflow, and its `n` flow adopts sesh-style
+  git-derived session names rather than inventing a scheme.
+- **The load-bearing differentiators** — defend and deepen these, cut
+  anything that doesn't serve them: (1) supervisor truth — state and
+  `waitingFor` read from Claude Code itself, not inferred from pane-output
+  hashing like tmuxpulse/mux, which cannot distinguish "quiet, thinking"
+  from "quiet, waiting on you"; (2) reply-without-attach; (3) the SSE/
+  mobile layer, which none of the surveyed tools have.
+- **Technique to adopt in v2b:** tmuxpulse's render economics — hash each
+  capture (FNV), skip re-render when unchanged — composes with the
+  control-mode event push for near-zero idle cost.
 
 ---
 *Where this spec and the code disagree, this spec wins; where this spec and
