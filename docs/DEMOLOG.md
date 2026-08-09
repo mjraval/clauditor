@@ -199,3 +199,42 @@ Verified live 2026-08-08 (v1 cockpit delta) via capture-pane at 80×20, 100×30,
 140×40: buckets, `⌁bare` badges, right-aligned day ages, contextual footer, the
 `?` overlay (with live `sources:` line), the centered make-durable sheet, and
 the no-sessions welcome — no horizontal overflow or torn glyphs at any size.
+
+## Cockpit v2 — the overhaul (2026-08-09)
+
+The v1 preview stripped ANSI from `claude logs` and mashed words together; the
+list column could overflow into the preview. v2 rewrites both.
+
+Preview: source is chosen per session kind — a tmux pane gets a RAW
+`capture-pane -p -e` (colors kept, made safe by the ANSI sanitation kit), and a
+pane-less background session renders its transcript tail
+(`${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/<sessionId>.jsonl`, new
+`internal/transcript` package) as clean `❯` user / `●` assistant / dim
+`⚒ <tool>` lines. The panel title names the source (`pane dev:1.2` vs
+`transcript`) and its age. Refresh is adaptive (~300ms while the selected
+session works, ~1200ms calm) with a 50ms settle debounce on cursor movement and
+a generation counter that discards stale fetches (a held `j` never queues tmux
+forks). The `/api/v1/…/logs` endpoint still returns ANSI-stripped text for curl.
+
+Visual: tonal surfaces instead of borders — a `mix()` lerp over three theme
+anchors derives the panel/block/rule tones; the list rail is painted with the
+panel tone via a `paint()` primitive (exact-width pad + bg re-assert after inner
+resets), the preview column stays unpainted, a hairline seam divides them. Both
+columns carry a 2-line panel title (bold-accent + full-width rule). The selected
+row is an unbroken inverted accent bar with a `▶` prefix. Every frame row is
+clamped to the terminal width, so the preview can never bleed into the list.
+
+Density & feel: budget-based row truncation (the name takes the remainder after
+glyph/flag/badge/age), two-component ages (`3h 20m`, `2d 5h`), `⋮ +N above/below`
+scroll indicators, and responsive empty-state tiers. Action feedback is a toast
+spliced over the frame's top-right (zero layout shift); the narrow list footer
+gains a live `tab preview` hint when it fits the 6-hint cap; the last frame is
+held while suspended into an attach (never a blank frame). Frozen keys
+(`enter r d x q`) unchanged.
+
+Verified live 2026-08-09 via capture-pane at 80×20, 100×30, 110×30, 140×40
+(`window-size manual`): every row exactly the terminal width, zero overflow at
+every size. On 140×40 with a WORKING supervisor session selected, the preview
+showed readable live pane content (`PREVIEW · … · pane claudinator:1.1`); the
+needs-input session's preview showed clean `❯`/`●`/`⚒` transcript lines — no
+word-mash.

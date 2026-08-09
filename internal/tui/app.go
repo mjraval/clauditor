@@ -19,9 +19,9 @@ import (
 
 const (
 	refreshInterval = 3 * time.Second        // snapshot poll
-	previewInterval = 2 * time.Second        // live-preview poll (separate tick)
 	spinnerInterval = 150 * time.Millisecond // header spinner while any session works
 	fetchTimeout    = 4 * time.Second
+	toastTTL        = 4 * time.Second // how long an action toast lingers
 )
 
 // mode is which input the keyboard is currently routed to.
@@ -44,6 +44,11 @@ type tickMsg struct{}
 type previewTickMsg struct{}
 type spinnerTickMsg struct{}
 
+// previewSettleMsg fires after the settle debounce; it carries the generation
+// it was scheduled for so a fetch is issued only if the selection hasn't moved
+// again since (TUI-CRAFT §1).
+type previewSettleMsg struct{ gen uint64 }
+
 type snapMsg struct {
 	snap *model.Snapshot
 	err  error
@@ -55,13 +60,17 @@ type logsMsg struct {
 	err   error
 }
 
-// previewMsg carries a preview fetch result. key is the session it was fetched
-// for, so a result arriving after the selection moved is ignored on render.
+// previewMsg carries a preview fetch result. gen is the generation it was
+// fetched for; a result whose gen is behind the model's current generation is a
+// stale fetch (the selection moved) and is discarded on receipt (TUI-CRAFT §1).
 type previewMsg struct {
-	key  string
-	text string
-	err  error
-	at   time.Time
+	key    string
+	gen    uint64
+	kind   previewKind
+	raw    string
+	source string
+	err    error
+	at     time.Time
 }
 
 type actionDoneMsg struct {
@@ -115,18 +124,29 @@ type Model struct {
 	blockedFlash bool
 
 	// live preview
-	showPreview bool // narrow-mode full-screen preview toggle
-	previewKey  string
-	previewText string
-	previewErr  error
-	previewAt   time.Time
+	showPreview   bool   // narrow-mode full-screen preview toggle
+	previewKey    string
+	previewGen    uint64 // bumped on every selection move; tags fetches for staleness
+	previewKind   previewKind
+	previewRaw    string // pane: raw ANSI capture. transcript: clean lines joined by \n
+	previewSource string // caption fragment ("pane dev:1.2" | "transcript")
+	previewErr    error
+	previewAt     time.Time
 
 	// header spinner
 	spinnerOn    bool
 	spinnerFrame int
 
+	// action feedback is a toast spliced over the frame's top-right (zero
+	// layout shift), not a status-line row (TUI-CRAFT §4).
 	statusMsg string
 	statusErr bool
+	statusAt  time.Time
+
+	// lastFrame is the previously rendered frame, returned while suspended into
+	// an attach so the screen is never blank during the handoff (TUI-CRAFT §4).
+	lastFrame string
+	suspending bool
 
 	width, height int
 	quitting      bool
@@ -176,15 +196,31 @@ func Run(ctx context.Context, cfg *config.Config) error {
 // --- tea.Model ---------------------------------------------------------------
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(fetchCmd(m.ctx, m.source), tickCmd(), previewTickCmd())
+	return tea.Batch(fetchCmd(m.ctx, m.source), tickCmd(), previewTickCmd(previewCalm))
 }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(refreshInterval, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-func previewTickCmd() tea.Cmd {
-	return tea.Tick(previewInterval, func(time.Time) tea.Msg { return previewTickMsg{} })
+// previewTickCmd schedules the next preview refresh after d — the adaptive
+// cadence (fast while working, calm otherwise) is chosen by the caller.
+func previewTickCmd(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return previewTickMsg{} })
+}
+
+// previewCadence is fast while the selected session is working, calm otherwise.
+func (m Model) previewCadence() time.Duration {
+	if sess := m.selectedSession(); sess != nil && sess.State == model.StateWorking {
+		return previewFast
+	}
+	return previewCalm
+}
+
+// previewSettleCmd is the 50ms debounce after a cursor move: it fires a settle
+// message tagged with gen, and the fetch happens only if gen is still current.
+func previewSettleCmd(gen uint64) tea.Cmd {
+	return tea.Tick(previewSettle, func(time.Time) tea.Msg { return previewSettleMsg{gen: gen} })
 }
 
 func spinnerTickCmd() tea.Cmd {
@@ -213,22 +249,23 @@ func logsCmd(ctx context.Context, source Source, sess *model.Session) tea.Cmd {
 	}
 }
 
-func previewFetch(ctx context.Context, source Source, sess *model.Session, lines int) tea.Cmd {
+func previewFetch(ctx context.Context, sess *model.Session, gen uint64, lines int) tea.Cmd {
 	key := sess.Key
 	return func() tea.Msg {
-		pf, ok := source.(PreviewFetcher)
-		if !ok {
-			return previewMsg{key: key, err: fmt.Errorf("preview unavailable for this data source"), at: time.Now()}
-		}
 		fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 		defer cancel()
-		text, err := pf.FetchPreview(fctx, sess, lines)
-		return previewMsg{key: key, text: lastNLines(text, lines), err: err, at: time.Now()}
+		res, err := fetchPreviewContent(fctx, sess, lines)
+		return previewMsg{
+			key: key, gen: gen, kind: res.kind, raw: res.raw,
+			source: res.source, err: err, at: time.Now(),
+		}
 	}
 }
 
-// previewRefreshCmd fetches the preview for the current selection, or nil when
-// the preview isn't visible / nothing is selected.
+// previewRefreshCmd fetches the preview for the current selection at the current
+// generation, or nil when the preview isn't visible / nothing is selected. Used
+// for in-place refreshes (ticks); selection MOVES go through the settle
+// debounce (moveCursor) so a held key doesn't queue tmux forks.
 func (m Model) previewRefreshCmd() tea.Cmd {
 	if !m.previewVisible() {
 		return nil
@@ -237,7 +274,20 @@ func (m Model) previewRefreshCmd() tea.Cmd {
 	if sess == nil {
 		return nil
 	}
-	return previewFetch(m.ctx, m.source, sess, m.previewBudget())
+	return previewFetch(m.ctx, sess, m.previewGen, m.previewBudget())
+}
+
+// moveCursor is the shared selection-move path: it bumps the preview generation
+// (invalidating in-flight fetches) and returns the settle-debounced fetch cmd.
+func (m *Model) moveCursor(idx int) tea.Cmd {
+	if idx >= 0 {
+		m.cursor = idx
+	}
+	m.previewGen++
+	if !m.previewVisible() {
+		return nil
+	}
+	return previewSettleCmd(m.previewGen)
 }
 
 func (m Model) previewVisible() bool { return wideLayout(m.width) || m.showPreview }
@@ -436,18 +486,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.logsVP.Width = msg.Width
-		m.logsVP.Height = bodyHeight(msg.Height)
+		lvpH := bodyHeight(msg.Height) - 1 // minus the logs title row
+		if lvpH < 1 {
+			lvpH = 1
+		}
+		m.logsVP.Height = lvpH
 		return m, m.previewRefreshCmd()
 
 	case tickMsg:
 		return m, tea.Batch(fetchCmd(m.ctx, m.source), tickCmd())
 
 	case previewTickMsg:
-		cmds := []tea.Cmd{previewTickCmd()}
+		// Adaptive cadence: reschedule fast while working, calm otherwise, and
+		// refresh the current selection in place (no generation bump — the
+		// selection hasn't moved).
+		cmds := []tea.Cmd{previewTickCmd(m.previewCadence())}
 		if c := m.previewRefreshCmd(); c != nil {
 			cmds = append(cmds, c)
 		}
 		return m, tea.Batch(cmds...)
+
+	case previewSettleMsg:
+		// A settle debounce fired: issue the fetch only if the selection hasn't
+		// moved again since it was scheduled.
+		if msg.gen != m.previewGen {
+			return m, nil
+		}
+		return m, m.previewRefreshCmd()
 
 	case spinnerTickMsg:
 		if !m.spinnerOn {
@@ -485,12 +550,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinnerOn = true
 			cmds = append(cmds, spinnerTickCmd())
 		}
-		// Fetch a preview when the selection changed or none is loaded yet.
-		if sel := m.selectedSession(); sel != nil && sel.Key != prevSel && m.previewVisible() {
-			if c := m.previewRefreshCmd(); c != nil {
-				cmds = append(cmds, c)
-			}
-		} else if m.previewKey == "" {
+		// Fetch a preview when the selection changed (clamp/refresh moved it) or
+		// none is loaded yet; bump the generation so the old fetch is discarded.
+		if sel := m.selectedSession(); (sel != nil && sel.Key != prevSel) || m.previewKey == "" {
+			m.previewGen++
 			if c := m.previewRefreshCmd(); c != nil {
 				cmds = append(cmds, c)
 			}
@@ -498,8 +561,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case previewMsg:
+		// Discard a stale fetch (the selection moved after it was dispatched).
+		if msg.gen != m.previewGen {
+			return m, nil
+		}
 		m.previewKey = msg.key
-		m.previewText = msg.text
+		m.previewKind = msg.kind
+		m.previewRaw = msg.raw
+		m.previewSource = msg.source
 		m.previewErr = msg.err
 		m.previewAt = msg.at
 		return m, nil
@@ -512,16 +581,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case attachDoneMsg:
+		m.suspending = false // handoff over: resume live rendering
 		if msg.err != nil {
-			m.statusMsg, m.statusErr = "attach: "+msg.err.Error(), true
+			m.statusMsg, m.statusErr, m.statusAt = "attach: "+msg.err.Error(), true, time.Now()
 		}
 		return m, tea.Batch(fetchCmd(m.ctx, m.source), m.previewRefreshCmd())
 
 	case actionDoneMsg:
 		if msg.err != nil {
-			m.statusMsg, m.statusErr = msg.err.Error(), true
+			m.statusMsg, m.statusErr, m.statusAt = msg.err.Error(), true, time.Now()
 		} else {
-			m.statusMsg, m.statusErr = msg.text, false
+			m.statusMsg, m.statusErr, m.statusAt = msg.text, false, time.Now()
 		}
 		return m, fetchCmd(m.ctx, m.source) // refresh promptly after a mutation
 
@@ -592,25 +662,13 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "j", "down":
-		if idx := NextSelectable(m.rows, m.cursor); idx >= 0 {
-			m.cursor = idx
-		}
-		return m, m.previewRefreshCmd()
+		return m, m.moveCursor(NextSelectable(m.rows, m.cursor))
 	case "k", "up":
-		if idx := PrevSelectable(m.rows, m.cursor); idx >= 0 {
-			m.cursor = idx
-		}
-		return m, m.previewRefreshCmd()
+		return m, m.moveCursor(PrevSelectable(m.rows, m.cursor))
 	case "g":
-		if idx := FirstSelectable(m.rows); idx >= 0 {
-			m.cursor = idx
-		}
-		return m, m.previewRefreshCmd()
+		return m, m.moveCursor(FirstSelectable(m.rows))
 	case "G":
-		if idx := PrevSelectable(m.rows, 0); idx >= 0 { // wraps backward → last
-			m.cursor = idx
-		}
-		return m, m.previewRefreshCmd()
+		return m, m.moveCursor(PrevSelectable(m.rows, 0)) // wraps backward → last
 	case "ctrl+d":
 		return m.halfPage(true)
 	case "ctrl+u":
@@ -653,21 +711,21 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		return m.attach(sess)
 	case "o":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		return m, openInTmuxCmd(m.ctx, m.actionC, sess)
 	case "r":
 		sess := m.selectedSession()
 		if !replyEnabled(sess) {
-			m.statusMsg, m.statusErr = "reply needs a session waiting on input with a background id (attach for others)", true
+			m.setStatus("reply needs a session waiting on input with a background id (attach for others)", true)
 			return m, nil
 		}
 		m.mode = modeReply
@@ -676,7 +734,7 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		m.mode = modeLogs
@@ -690,11 +748,11 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		if sess.ID == "" {
-			m.statusMsg, m.statusErr = "session has no background id — can't stop from here", true
+			m.setStatus("session has no background id — can't stop from here", true)
 			return m, nil
 		}
 		m.mode = modeConfirmStop
@@ -703,14 +761,14 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "R":
 		sess := m.selectedSession()
 		if !respawnEnabled(sess) {
-			m.statusMsg, m.statusErr = "respawn only applies to stopped/failed sessions with a background id", true
+			m.setStatus("respawn only applies to stopped/failed sessions with a background id", true)
 			return m, nil
 		}
 		return m, respawnCmd(m.ctx, m.actionC, sess)
 	case "D":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		toast, openSheet := durabilityAction(sess)
@@ -719,10 +777,42 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.durableSess = sess
 			return m, nil
 		}
-		m.statusMsg, m.statusErr = toast, false
+		m.setStatus(toast, false)
 		return m, nil
 	}
 	return m, nil
+}
+
+// setStatus records an action-feedback toast. EVERY status assignment goes
+// through here so statusAt is always stamped — a dozen call sites once set
+// the message without the timestamp and the toast never rendered (QA finding:
+// half the app's contextual feedback was dead code).
+func (m *Model) setStatus(msg string, isErr bool) {
+	m.statusMsg, m.statusErr, m.statusAt = msg, isErr, time.Now()
+}
+
+// worktreeBranch resolves the branch label for a session's worktree from the
+// snapshot (falling back to the worktree basename; "" when unbound).
+func (m Model) worktreeBranch(s *model.Session) string {
+	if s == nil || s.Worktree == "" {
+		return ""
+	}
+	if m.snap != nil {
+		for _, r := range m.snap.Repos {
+			for _, wt := range r.Worktrees {
+				if wt.Path == s.Worktree {
+					if wt.Branch != "" {
+						return wt.Branch
+					}
+					break
+				}
+			}
+		}
+	}
+	if i := strings.LastIndexByte(s.Worktree, '/'); i >= 0 {
+		return s.Worktree[i+1:]
+	}
+	return s.Worktree
 }
 
 // halfPage moves the cursor a half-body of selectable rows (ctrl+d/ctrl+u),
@@ -747,7 +837,7 @@ func (m Model) halfPage(down bool) (tea.Model, tea.Cmd) {
 			m.cursor = idx
 		}
 	}
-	return m, m.previewRefreshCmd()
+	return m, m.moveCursor(m.cursor)
 }
 
 // applyStateFilter sets the 1–4 direct state filter, or clears it when the same
@@ -817,16 +907,25 @@ func (m Model) handleDurableKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) attach(sess *model.Session) (tea.Model, tea.Cmd) {
 	switch {
 	case sess.ID != "":
-		return m, attachClaudeCmd(sess)
+		return m.suspendInto(attachClaudeCmd(sess))
 	case sess.TmuxPaneID != "":
 		if m.inTmux {
 			return m, switchClientCmd(m.ctx, sess.TmuxTarget)
 		}
-		return m, attachTmuxCmd(tmuxSessionName(sess))
+		return m.suspendInto(attachTmuxCmd(tmuxSessionName(sess)))
 	default:
-		m.statusMsg, m.statusErr = "nothing to attach to (no background id or tmux pane)", true
+		m.statusMsg, m.statusErr, m.statusAt = "nothing to attach to (no background id or tmux pane)", true, time.Now()
 		return m, nil
 	}
+}
+
+// suspendInto stashes the current frame and marks the model suspending so View
+// keeps that frame on screen through the ExecProcess handoff (never a blank
+// frame, TUI-CRAFT §4). attachDoneMsg clears the flag.
+func (m Model) suspendInto(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.lastFrame = m.renderFrame()
+	m.suspending = true
+	return m, cmd
 }
 
 func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -862,7 +961,7 @@ func (m Model) handleDispatchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		m.dispatchInput.Blur()
 		if prompt == "" {
-			m.statusMsg, m.statusErr = "dispatch canceled: empty prompt", true
+			m.setStatus("dispatch canceled: empty prompt", true)
 			return m, nil
 		}
 		return m, dispatchCmd(m.ctx, m.actionC, m.snap, m.selectedSession(), prompt)
@@ -884,11 +983,11 @@ func (m Model) handleReplyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		m.replyInput.Blur()
 		if text == "" {
-			m.statusMsg, m.statusErr = "reply canceled: empty text", true
+			m.setStatus("reply canceled: empty text", true)
 			return m, nil
 		}
 		if !replyEnabled(sess) {
-			m.statusMsg, m.statusErr = "selection no longer accepts a reply", true
+			m.setStatus("selection no longer accepts a reply", true)
 			return m, nil
 		}
 		return m, replyCmd(m.ctx, m.actionC, sess, text)
@@ -930,6 +1029,19 @@ func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
+	// While suspended into an attach, keep the last rendered frame on screen so
+	// the handoff is never a blank frame (TUI-CRAFT §4).
+	if m.suspending && m.lastFrame != "" {
+		return m.lastFrame
+	}
+	return m.renderFrame()
+}
+
+// renderFrame builds the whole cockpit frame: header, body (split/list/preview,
+// each with its 2-line panel title), the status/input line, and the contextual
+// footer — then clamps every row to the terminal width (no overflow ever) and
+// splices any action toast over the top-right without shifting a single row.
+func (m Model) renderFrame() string {
 	width := m.width
 	if width <= 0 {
 		width = 100
@@ -941,34 +1053,80 @@ func (m Model) View() string {
 		if m.snap != nil {
 			ages = m.snap.CollectorAges
 		}
-		return strings.Join(helpLines(width, max0(m.height), ages, m.source.Label()), "\n")
+		lines := helpLines(width, max0(m.height), ages, m.source.Label())
+		return clampJoin(lines, width)
 	}
 
 	header := HeaderText(m.snap, m.source.Label(), m.lastFetch, time.Now(), m.stateFilter, m.query, m.spinnerGlyph())
 	bodyH := bodyHeight(m.height)
 
-	var body, footer string
+	var body []string
+	var footer string
 	switch m.mode {
 	case modeLogs:
-		body = m.viewLogs()
+		body = normalizeLines(strings.Split(m.viewLogs(), "\n"), width, bodyH)
 		footer = FooterText(footerLogs)
 	case modeDurable:
 		bg := m.listLinesPlain(width, bodyH)
-		body = strings.Join(overlayCenter(bg, makeDurableSheet(m.durableSess), sheetWidth, width, bodyH), "\n")
+		body = overlayCenter(bg, makeDurableSheet(m.durableSess), sheetWidth, width, bodyH)
 		footer = styleFooterBar.Render("t continue in tmux · b background it · esc cancel")
-	case modeFilter, modeDispatch, modeReply, modeConfirmStop:
-		body = m.viewBody(width, bodyH)
+	case modeConfirmStop:
+		bg := m.listLinesPlain(width, bodyH)
+		body = overlayCenter(bg, makeStopSheet(m.confirmSess), sheetWidth, width, bodyH)
+		footer = styleFooterBar.Render("y stop · n/esc cancel")
+	case modeFilter, modeDispatch, modeReply:
+		body = m.bodyLines(width, bodyH)
 		footer = FooterText(footerInput)
 	default:
-		body = m.viewBody(width, bodyH)
+		body = m.bodyLines(width, bodyH)
 		if !wideLayout(width) && m.showPreview {
 			footer = FooterText(footerPreview)
+		} else if !wideLayout(width) {
+			footer = styleFooterList(narrowListFooter(m.selectedSession()), m.blockedFlash)
 		} else {
 			footer = styleFooterList(footerForSelection(m.selectedSession()), m.blockedFlash)
 		}
 	}
 
-	return strings.Join([]string{header, body, m.viewStatusLine(), footer}, "\n")
+	rows := make([]string, 0, bodyH+3)
+	rows = append(rows, header)
+	rows = append(rows, body...)
+	rows = append(rows, m.statusLineRow())
+	rows = append(rows, footer)
+	for i := range rows {
+		rows[i] = clampDisplay(rows[i], width) // post-join width safety net (§2)
+	}
+	frame := strings.Join(rows, "\n")
+
+	// Action feedback is a toast spliced over the top-right — zero layout shift.
+	if m.mode == modeList {
+		if box := m.toastBox(width); box != nil {
+			frame = spliceTopRight(frame, box, 1, width)
+		}
+	}
+	return frame
+}
+
+// clampJoin clamps each line to width and joins with newlines.
+func clampJoin(lines []string, width int) string {
+	for i := range lines {
+		lines[i] = clampDisplay(lines[i], width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// normalizeLines pads/truncates a block to exactly height lines of at most
+// width display cells each.
+func normalizeLines(lines []string, width, height int) []string {
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		if i < len(lines) {
+			out[i] = plainPad(lines[i], width)
+		} else {
+			out[i] = plainPad("", width)
+		}
+	}
+	return out
 }
 
 func (m Model) spinnerGlyph() string {
@@ -978,64 +1136,158 @@ func (m Model) spinnerGlyph() string {
 	return spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
 }
 
-// viewBody chooses the layout: split (wide), full-screen preview (narrow +
-// toggled), or the full-width list (narrow default).
-func (m Model) viewBody(width, height int) string {
+// bodyLines chooses the layout and returns exactly height rows: a split (wide),
+// a full-screen preview (narrow + toggled), or the full-width list.
+func (m Model) bodyLines(width, height int) []string {
 	if !wideLayout(width) && m.showPreview {
-		return strings.Join(m.previewLines(width, height), "\n")
+		return m.previewColumn(width, height)
 	}
 	if wideLayout(width) {
-		return m.viewSplit(width, height)
+		return m.splitColumns(width, height)
 	}
-	return m.viewList(width, height)
+	return m.listColumn(width, height)
 }
 
-func (m Model) viewSplit(width, height int) string {
-	const sep = " │ "
-	sepW := len([]rune(sep))
-	// List width = clamp(38, 42% of width, 64): below 38 the row anatomy can't
-	// hold a name + waitingFor; above 64 a session row is pure padding while the
-	// preview — the pane that shows actual work — starves (§5).
-	listW := width * 42 / 100
+// splitWidths computes the list/preview split: list width = clamp(38, 42%, 64)
+// with one cell for the hairline seam between them (§5 geometry).
+func splitWidths(width int) (listW, previewW int, ok bool) {
+	listW = width * 42 / 100
 	if listW < 38 {
 		listW = 38
 	}
 	if listW > 64 {
 		listW = 64
 	}
-	previewW := width - listW - sepW
-	if previewW < 16 { // too cramped to split — fall back to list only
-		return m.viewList(width, height)
-	}
-	left := m.listLines(listW, height)
-	right := m.previewLines(previewW, height)
-	var b strings.Builder
-	for i := 0; i < height; i++ {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(left[i])
-		b.WriteString(styleSep.Render(sep))
-		b.WriteString(right[i])
-	}
-	return b.String()
+	previewW = width - listW - 1 // 1 cell for the seam
+	return listW, previewW, previewW >= 16
 }
 
-// listLines renders the session list as exactly height padded lines, or the
-// appropriate empty/first-run/no-matches state (§5) when there are no rows.
-func (m Model) listLines(width, height int) []string {
-	if len(m.rows) == 0 {
-		return centerLines(m.emptyState(width), width, height)
+// splitColumns renders the wide split: a painted (tonal) list rail, a hairline
+// seam, and the unpainted preview column. Both columns carry their own 2-line
+// panel title. Pre-join widths are exact (paint/plainPad pad to display width),
+// so the assembled row is exactly `width` cells (§2 width discipline).
+func (m Model) splitColumns(width, height int) []string {
+	listW, previewW, ok := splitWidths(width)
+	if !ok { // too cramped to split — fall back to the full-width list
+		return m.listColumn(width, height)
 	}
+	left := m.listColumn(listW, height)
+	right := m.previewColumn(previewW, height)
+	seam := styleRule.Render("│")
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		out[i] = left[i] + seam + right[i]
+	}
+	return out
+}
+
+// listColumn is the painted session-list rail: a "SESSIONS" title, a full-width
+// rule, then the rows (or the empty/first-run/no-matches state), all filled with
+// the panel tone so the rail reads as a lifted surface without a border.
+func (m Model) listColumn(width, height int) []string {
 	out := make([]string, 0, height)
-	start, end := VisibleWindow(len(m.rows), max0(m.cursor), height)
+	out = append(out, paint(styleTitle.Render("SESSIONS"), width, 0, tonePanel))
+	if height > 1 {
+		out = append(out, paint(hrule(width), width, 0, tonePanel))
+	}
+	bodyH := height - len(out)
+	if bodyH < 0 {
+		bodyH = 0
+	}
+	out = append(out, m.listBody(width, bodyH)...)
+	return normalizePainted(out, width, height, tonePanel)
+}
+
+// listBody renders the list rows (or the empty state) as exactly height painted
+// lines, with ⋮ +N above/below scroll indicators as real reserved rows (§3).
+func (m Model) listBody(width, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	if len(m.rows) == 0 {
+		return m.emptyStateLines(width, height)
+	}
+	idx, above, below := m.windowRows(height)
+	out := make([]string, 0, height)
+	if above > 0 {
+		out = append(out, paint(styleDim.Render(fmt.Sprintf("  ⋮ +%d above", above)), width, 0, tonePanel))
+	}
+	for _, i := range idx {
+		out = append(out, m.renderListRow(i, width))
+	}
+	if below > 0 {
+		out = append(out, paint(styleDim.Render(fmt.Sprintf("  ⋮ +%d below", below)), width, 0, tonePanel))
+	}
+	return normalizePainted(out, width, height, tonePanel)
+}
+
+// windowRows selects the visible row indices for a height-row viewport,
+// reserving a line for each scroll indicator that will show, and returns the
+// count of rows hidden above and below.
+func (m Model) windowRows(height int) (idx []int, above, below int) {
+	total := len(m.rows)
+	if total <= height {
+		idx = make([]int, total)
+		for i := range idx {
+			idx[i] = i
+		}
+		return idx, 0, 0
+	}
+	start, end := VisibleWindow(total, max0(m.cursor), height)
+	eff := height - b2i(start > 0) - b2i(end < total)
+	if eff < 1 {
+		eff = 1
+	}
+	start, end = VisibleWindow(total, max0(m.cursor), eff)
+	idx = make([]int, 0, end-start)
 	for i := start; i < end; i++ {
-		out = append(out, RenderRow(m.rows[i], width, i == m.cursor))
+		idx = append(idx, i)
 	}
-	for len(out) < height {
-		out = append(out, padTrunc("", width))
+	return idx, start, total - end
+}
+
+// renderListRow paints one row: the selected session row is an unbroken
+// inverted bar (dark bold text on the accent surface) across every segment; all
+// other rows keep their state/chrome color on the panel tone (§2).
+func (m Model) renderListRow(i, width int) string {
+	row := m.rows[i]
+	selected := i == m.cursor
+	text := rowLine(row, width, selected)
+	if selected {
+		return paint(styleSelText.Render(text), width, 0, string(colAccent))
 	}
-	return out[:height]
+	// The ⌁bare badge always renders in accent regardless of the row's state
+	// color — it is an invitation to act (D), and dimming it would bury a
+	// data-loss risk (TUI-DESIGN §5 overrule; QA fidelity finding).
+	if row.Kind == RowSession && strings.Contains(text, bareBadge) {
+		st := rowContentStyle(row)
+		before, after, _ := strings.Cut(text, bareBadge)
+		return paint(st.Render(before)+styleAccent.Render(bareBadge)+st.Render(after),
+			width, 0, tonePanel)
+	}
+	return paint(rowContentStyle(row).Render(text), width, 0, tonePanel)
+}
+
+// b2i is 1 for true, 0 for false.
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// normalizePainted pads a painted block to exactly height rows in the given
+// tone, and clamps any over-long row.
+func normalizePainted(lines []string, width, height int, tone string) []string {
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		if i < len(lines) {
+			out[i] = lines[i]
+		} else {
+			out[i] = paint("", width, 0, tone)
+		}
+	}
+	return out
 }
 
 // listLinesPlain renders the list as plain (unstyled) width-padded lines, used
@@ -1054,9 +1306,29 @@ func (m Model) listLinesPlain(width, height int) []string {
 	return out[:max0(height)]
 }
 
+// emptyStateLines renders the appropriate no-rows state (§5) as exactly height
+// painted lines, vertically centered on the panel tone.
+func (m Model) emptyStateLines(width, height int) []string {
+	content := m.emptyState(width, height)
+	out := make([]string, 0, height)
+	top := (height - len(content)) / 2
+	if top < 0 {
+		top = 0
+	}
+	for i := 0; i < top; i++ {
+		out = append(out, paint("", width, 0, tonePanel))
+	}
+	for _, l := range content {
+		out = append(out, paint(l, width, 0, tonePanel))
+	}
+	return normalizePainted(out, width, height, tonePanel)
+}
+
 // emptyState returns the styled, horizontally-centered lines for whichever
-// no-rows condition holds (§5, exact copy).
-func (m Model) emptyState(width int) []string {
+// no-rows condition holds (§5). The no-sessions-anywhere welcome is responsive:
+// the full tier keeps the exact v1 copy; narrower/shorter frames drop to a
+// compact then a minimal tier (TUI-CRAFT §3).
+func (m Model) emptyState(width, height int) []string {
 	switch {
 	case m.snap == nil: // first fetch not back yet
 		return []string{styleDim.Render(center(m.spinnerGlyph()+" connecting to the Claude supervisor…", width))}
@@ -1067,17 +1339,30 @@ func (m Model) emptyState(width int) []string {
 		}
 		return []string{styleDim.Render(center(msg, width))}
 	}
-	// No sessions anywhere: the welcoming empty state.
+	// No sessions anywhere: the welcoming empty state, tiered by width & height.
 	scan := "just now"
 	if !m.lastFetch.IsZero() {
 		scan = humanDur(time.Since(m.lastFetch)) + " ago"
 	}
-	lines := []string{
-		"No Claude sessions anywhere on this box.",
-		fmt.Sprintf("supervisor + tmux scanned %s — a new session appears here within 5s.", scan),
-		"",
-		"  d   dispatch a background task from here",
-		"  or run `claude` in any repo — it shows up live.",
+	var lines []string
+	switch {
+	case width >= 64 && height >= 7: // full tier — exact v1 copy
+		lines = []string{
+			"No Claude sessions anywhere on this box.",
+			// ≤62 cells so it renders untruncated even in the split view's
+			// clamped 64-col list (QA fidelity finding).
+			fmt.Sprintf("supervisor + tmux scanned %s — sessions appear within 5s.", scan),
+			"",
+			"  d   dispatch a background task from here",
+			"  or run `claude` in any repo — it shows up live.",
+		}
+	case width >= 40 && height >= 3: // compact tier
+		lines = []string{
+			"No Claude sessions here.",
+			"d dispatch · or run `claude` in any repo.",
+		}
+	default: // minimal tier
+		lines = []string{"no sessions · d dispatch"}
 	}
 	out := make([]string, len(lines))
 	for i, l := range lines {
@@ -1099,94 +1384,92 @@ func center(s string, width int) string {
 	return strings.Repeat(" ", left) + s + strings.Repeat(" ", width-r-left)
 }
 
-// centerLines vertically centers a styled content block within height, padding
-// above and below with dim blank lines.
-func centerLines(content []string, width, height int) []string {
+// previewColumn is the unpainted live-preview column: a "PREVIEW · <name> ·
+// <source> · <age>" title, a full-width rule, then the tailed content. Pane
+// sources keep their colors (sanitized to be safe); transcript sources render
+// as dim ❯/●/⚒ lines. The terminal's own background shows through (§2).
+func (m Model) previewColumn(width, height int) []string {
+	out := make([]string, 0, height)
+	out = append(out, plainPad(styleTitle.Render(m.previewTitle()), width))
+	if height > 1 {
+		out = append(out, plainPad(hrule(width), width))
+	}
+	contentH := height - len(out)
+	if contentH < 0 {
+		contentH = 0
+	}
+	out = append(out, m.previewContentLines(width, contentH)...)
+	return normalizeLines(out, width, height)
+}
+
+// previewTitle names the preview's source and freshness (§5 honesty): the two
+// sources have different fidelity, so the user always knows which they see.
+func (m Model) previewTitle() string {
+	sess := m.selectedSession()
+	if sess == nil {
+		return "PREVIEW"
+	}
+	src := m.previewSource
+	if m.previewKey != sess.Key || src == "" {
+		switch previewSourceKind(sess) {
+		case previewPane:
+			src = "pane " + sess.TmuxTarget
+		case previewTranscript:
+			src = "transcript"
+		default:
+			src = "—"
+		}
+	}
+	parts := []string{"PREVIEW", displayName(sess), src}
+	if m.previewKey == sess.Key && !m.previewAt.IsZero() {
+		parts = append(parts, fmt.Sprintf("%ds", int(time.Since(m.previewAt).Seconds())))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// previewContentLines renders the preview body as exactly height plain-padded
+// lines (tail-anchored), keeping pane colors and dimming transcript lines.
+func (m Model) previewContentLines(width, height int) []string {
 	if height <= 0 {
 		return nil
 	}
-	blank := styleDim.Render(strings.Repeat(" ", max0(width)))
-	out := make([]string, 0, height)
-	top := (height - len(content)) / 2
-	if top < 0 {
-		top = 0
-	}
-	for i := 0; i < top; i++ {
-		out = append(out, blank)
-	}
-	out = append(out, content...)
-	for len(out) < height {
-		out = append(out, blank)
-	}
-	return out[:height]
-}
-
-func (m Model) viewList(width, height int) string {
-	return strings.Join(m.listLines(width, height), "\n")
-}
-
-// previewLines renders the live-preview pane as exactly height padded lines:
-// a caption, then the tailed session output.
-func (m Model) previewLines(width, height int) []string {
-	out := make([]string, height)
-	blank := padTrunc("", width)
-	for i := range out {
-		out[i] = blank
-	}
-	if height == 0 {
-		return out
-	}
 	sess := m.selectedSession()
-	out[0] = styleCaption.Render(padTrunc(m.previewCaption(sess), width))
-	if height == 1 {
-		return out
-	}
-	content := m.previewContent(sess)
-	for i, line := range strings.Split(content, "\n") {
-		if i+1 >= height {
-			break
-		}
-		out[i+1] = stylePreview.Render(padTrunc(line, width))
-	}
-	return out
-}
-
-func (m Model) previewCaption(sess *model.Session) string {
+	var lines []string
+	colored := false
 	switch {
 	case sess == nil:
-		return "preview · (no selection)"
+		lines = []string{"(no selection)"}
 	case m.previewKey != sess.Key:
-		return "preview · loading…"
+		lines = []string{"loading…"}
 	case m.previewErr != nil:
-		return "preview · error"
-	default:
-		// Name the source: a live tmux pane and a `claude logs` replay have
-		// different fidelity, so the caption says which one (§5).
-		src := "logs " + sess.ID
-		if previewSourceKind(sess) == previewPane {
-			src = "pane " + sess.TmuxTarget
+		lines = []string{"preview error: " + m.previewErr.Error()}
+	case m.previewKind == previewPane:
+		lines = SanitizeCapture(m.previewRaw, width) // colors kept, made safe (§1)
+		colored = true
+		if len(lines) == 0 {
+			lines, colored = []string{"(no output yet)"}, false
 		}
-		caption := fmt.Sprintf("preview · %s · %s", displayName(sess), src)
-		if !m.previewAt.IsZero() {
-			caption += fmt.Sprintf(" · %ds", int(time.Since(m.previewAt).Seconds()))
+	case m.previewKind == previewTranscript:
+		if strings.TrimSpace(m.previewRaw) == "" {
+			lines = []string{"(no transcript yet)"}
+		} else {
+			lines = strings.Split(m.previewRaw, "\n")
 		}
-		return caption
-	}
-}
-
-func (m Model) previewContent(sess *model.Session) string {
-	switch {
-	case sess == nil:
-		return "no session selected"
-	case m.previewKey != sess.Key:
-		return "loading…"
-	case m.previewErr != nil:
-		return "preview error: " + m.previewErr.Error()
-	case strings.TrimSpace(m.previewText) == "":
-		return "(no output yet)"
 	default:
-		return m.previewText
+		lines = []string{"(no preview for this session)"}
 	}
+	if len(lines) > height { // tail: show the most recent lines
+		lines = lines[len(lines)-height:]
+	}
+	out := make([]string, 0, height)
+	for _, l := range lines {
+		if colored {
+			out = append(out, plainPad(l, width)) // already sanitized + reset
+		} else {
+			out = append(out, plainPad(stylePreview.Render(l), width))
+		}
+	}
+	return normalizeLines(out, width, height)
 }
 
 func (m Model) viewLogs() string {
@@ -1197,16 +1480,22 @@ func (m Model) viewLogs() string {
 	return styleRepo.Render(title) + "\n" + m.logsVP.View()
 }
 
-func (m Model) viewStatusLine() string {
+// statusLineRow is the one reserved status/input row: the modal-input line for
+// filter/dispatch/reply, the stop confirm, or a persistent red fetch-outage
+// notice (§5). Ordinary action feedback lives in the toast, not here — so the
+// row is blank in the calm list state (TUI-CRAFT §4).
+func (m Model) statusLineRow() string {
 	switch m.mode {
 	case modeFilter:
 		return "/ " + m.filterInput.View()
 	case modeDispatch:
 		target := "(no session selected)"
 		if s := m.selectedSession(); s != nil {
+			// Same repo·branch language the row tree uses — never a raw path
+			// (QA finding: repo + absolute worktree path rendered doubled).
 			target = s.Repo
-			if s.Worktree != "" {
-				target += "/" + s.Worktree
+			if b := m.worktreeBranch(s); b != "" {
+				target += " · " + b
 			}
 		}
 		return fmt.Sprintf("dispatch → %s: %s", target, m.dispatchInput.View())
@@ -1216,25 +1505,14 @@ func (m Model) viewStatusLine() string {
 			target = displayName(s)
 		}
 		return fmt.Sprintf("reply → %s: %s", target, m.replyInput.View())
-	case modeConfirmStop:
-		name := ""
-		if m.confirmSess != nil {
-			name = displayName(m.confirmSess)
-		}
-		return ErrorText(fmt.Sprintf("stop %q? (y/n)", name))
+	// modeConfirmStop renders as a centered sheet (View), never a status line.
 	default:
 		// A fetch outage is the headline while it lasts: keep the last good
 		// snapshot on screen (§5) and name the next action in red.
 		if m.fetchErr != nil {
 			return ErrorText("supervisor unreachable — is claude installed? retrying…")
 		}
-		if m.statusMsg == "" {
-			return ""
-		}
-		if m.statusErr {
-			return ErrorText(m.statusMsg)
-		}
-		return styleWorking.Render(m.statusMsg)
+		return ""
 	}
 }
 

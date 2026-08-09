@@ -64,7 +64,7 @@ func TestSessionBody_BadgePriorityAndDegradation(t *testing.T) {
 	if !strings.Contains(wide, "⧉ dev:1.2") {
 		t.Errorf("wide tmux row should show target: %q", wide)
 	}
-	if !strings.HasSuffix(strings.TrimRight(wide, " "), "2h10m") {
+	if !strings.HasSuffix(strings.TrimRight(wide, " "), "2h 10m") {
 		t.Errorf("age should be right-aligned: %q", wide)
 	}
 
@@ -101,10 +101,10 @@ func TestRowLine_SelectedHasMarker(t *testing.T) {
 	row := Row{Kind: RowSession, Session: s}
 	sel := rowLine(row, 0, true)
 	unsel := rowLine(row, 0, false)
-	if !strings.HasPrefix(sel, "> ") {
+	if !strings.HasPrefix(sel, "▶ ") {
 		t.Errorf("selected row should start with cursor marker: %q", sel)
 	}
-	if strings.HasPrefix(unsel, "> ") {
+	if strings.HasPrefix(unsel, "▶ ") {
 		t.Errorf("unselected row should not have cursor marker: %q", unsel)
 	}
 }
@@ -239,15 +239,21 @@ func TestFooterText_ModalVariants(t *testing.T) {
 
 func TestFreshnessChip_StalePast15s(t *testing.T) {
 	now := time.Now()
-	if got := stripANSI(freshnessChip(now.Add(-3*time.Second), now)); got != "3s" {
+	if got := stripANSI(freshnessChip(now.Add(-3*time.Second), now, 0)); got != "3s" {
 		t.Errorf("fresh chip = %q, want bare 3s", got)
 	}
-	got := stripANSI(freshnessChip(now.Add(-22*time.Second), now))
+	got := stripANSI(freshnessChip(now.Add(-22*time.Second), now, 0))
 	if got != "stale 22s — retrying" {
 		t.Errorf("stale chip = %q, want %q", got, "stale 22s — retrying")
 	}
-	if got := stripANSI(freshnessChip(time.Time{}, now)); got != "never" {
+	if got := stripANSI(freshnessChip(time.Time{}, now, 0)); got != "never" {
 		t.Errorf("zero chip = %q, want never", got)
+	}
+	// Regression (QA fidelity): in-process mode fetches never fail, so a dead
+	// supervisor must surface via the collector age, not the snapshot age.
+	got = stripANSI(freshnessChip(now.Add(-1*time.Second), now, 21))
+	if got != "stale 21s — retrying" {
+		t.Errorf("supervisor-age staleness = %q, want %q", got, "stale 21s — retrying")
 	}
 }
 
@@ -274,6 +280,26 @@ func TestSourcesLine(t *testing.T) {
 	}
 }
 
+func TestHumanAge_TwoComponent(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{3 * time.Second, "0s"},                     // quantized down to a 5s step
+		{47 * time.Second, "45s"},                   // 5s steps
+		{45 * time.Minute, "45m"},                   // single component under an hour
+		{3*time.Hour + 20*time.Minute, "3h 20m"},    // two components
+		{2 * time.Hour, "2h"},                       // secondary dropped when zero
+		{2*24*time.Hour + 5*time.Hour, "2d 5h"},     // days + hours
+		{9 * 24 * time.Hour, "1w 2d"},               // weeks + days
+	}
+	for _, c := range cases {
+		if got := humanAge(c.d); got != c.want {
+			t.Errorf("humanAge(%s) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}
+
 func TestHumanDur_Days(t *testing.T) {
 	cases := []struct {
 		d    time.Duration
@@ -290,5 +316,16 @@ func TestHumanDur_Days(t *testing.T) {
 		if got := humanDur(c.d); got != c.want {
 			t.Errorf("humanDur(%s) = %q, want %q", c.d, got, c.want)
 		}
+	}
+}
+
+// Regression (QA): a blocked session with empty waitingFor still shows a ⚑
+// flag ("input") — blocked means waiting on a human even when the supervisor
+// gives no reason string.
+func TestSessionBody_BlockedWithoutWaitingForShowsFlag(t *testing.T) {
+	s := &model.Session{Name: "quiet-blocked", State: model.StateBlocked, Kind: model.KindSupervisorBG, ID: "ab12cd34"}
+	body := sessionBody(s, 60)
+	if !strings.Contains(body, "⚑ input") {
+		t.Errorf("blocked-without-reason row lost its flag: %q", body)
 	}
 }

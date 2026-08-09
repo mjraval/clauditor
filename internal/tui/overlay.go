@@ -36,7 +36,8 @@ func helpLines(width, height int, ages map[string]int64, sourceLabel string) []s
 	for i, r := range helpRows {
 		line := "  " + padTrunc(r.left, leftCol) + " " + r.right
 		line = padTrunc(line, width)
-		if i == 0 { // GLANCE / ACT ON SELECTION section header
+		// Section headers (GLANCE/ACT row 0, MOVE mid-list) render in accent.
+		if i == 0 || strings.HasPrefix(r.left, "MOVE") {
 			out = append(out, styleAccent.Render(line))
 		} else {
 			out = append(out, styleDim.Render(line))

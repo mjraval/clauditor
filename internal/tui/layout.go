@@ -18,24 +18,24 @@ func wideLayout(width int) bool { return width >= wideThreshold }
 type previewKind int
 
 const (
-	previewNone previewKind = iota
-	previewPane             // tmux capture-pane -p -t <paneID>
-	previewLogs             // claude logs <id> (ANSI-stripped)
+	previewNone       previewKind = iota
+	previewPane                   // tmux capture-pane -p -e <paneID> (raw, ANSI kept)
+	previewTranscript             // ~/.claude/projects/*/<sessionId>.jsonl tail
 )
 
 // previewSourceKind picks the preview source for a session: a live tmux pane
-// wins (it shows the actual terminal a human sees), otherwise a background id
-// falls back to `claude logs`. Sessions with neither have no preview. This is
-// the local source's selection contract (the daemon /logs endpoint has its own
-// fixed ID-first order); kept pure so it is unit-testable without a TTY.
+// wins (it shows the actual terminal a human sees), otherwise a pane-less
+// session with a resumable sessionId falls back to its transcript tail.
+// Sessions with neither have no preview. Kept pure so it is unit-testable
+// without a TTY (TUI-CRAFT §1).
 func previewSourceKind(sess *model.Session) previewKind {
 	switch {
 	case sess == nil:
 		return previewNone
 	case sess.TmuxPaneID != "":
 		return previewPane
-	case sess.ID != "":
-		return previewLogs
+	case sess.SessionID != "":
+		return previewTranscript
 	default:
 		return previewNone
 	}

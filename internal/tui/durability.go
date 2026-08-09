@@ -78,6 +78,37 @@ const (
 	sheetWidth      = sheetInnerWidth + 4
 )
 
+// renderSheet draws a titled, bordered sheet box around body lines, each line
+// exactly sheetWidth runes wide (title set into the top border, card style).
+func renderSheet(title string, body []string) []string {
+	const inner = sheetInnerWidth
+	lines := make([]string, 0, len(body)+2)
+	head := "┌ " + truncate(title, inner-1) + " "
+	dash := inner + 4 - runeLen(head) - 1
+	if dash < 1 {
+		dash = 1
+	}
+	lines = append(lines, styleAccent.Render(head+strings.Repeat("─", dash)+"┐"))
+	for _, ln := range body {
+		txt := padTrunc(ln, inner)
+		lines = append(lines, styleAccent.Render("│ ")+styleDim.Render(txt)+styleAccent.Render(" │"))
+	}
+	lines = append(lines, styleAccent.Render("└"+strings.Repeat("─", inner+2)+"┘"))
+	return lines
+}
+
+// makeStopSheet is the centered stop confirm (§3: confirm sheets exist only
+// for consequences — and they are sheets, never a bare status line).
+func makeStopSheet(s *model.Session) []string {
+	return renderSheet("Stop — "+displayName(s), []string{
+		"Stops this background session. The conversation is kept —",
+		"resume it later with `claude attach` or R respawn from here.",
+		"",
+		" y   stop it",
+		" n   cancel   (esc works too)",
+	})
+}
+
 // makeDurableSheet renders the centered make-durable sheet (§6, exact copy) for
 // a bare session, as styled lines each exactly sheetWidth runes wide.
 func makeDurableSheet(s *model.Session) []string {
@@ -99,21 +130,5 @@ func makeDurableSheet(s *model.Session) []string {
 		"",
 		" esc cancel",
 	}
-	const inner = sheetInnerWidth // content width between the "│ " and " │" borders
-	title := "Make durable — " + displayName(s)
-
-	lines := make([]string, 0, len(body)+2)
-	// Top border: ┌ <title> ─…─┐  (total width = inner + 4)
-	head := "┌ " + truncate(title, inner-1) + " "
-	dash := inner + 4 - runeLen(head) - 1 // -1 for the closing ┐
-	if dash < 1 {
-		dash = 1
-	}
-	lines = append(lines, styleAccent.Render(head+strings.Repeat("─", dash)+"┐"))
-	for _, ln := range body {
-		txt := padTrunc(ln, inner)
-		lines = append(lines, styleAccent.Render("│ ")+styleDim.Render(txt)+styleAccent.Render(" │"))
-	}
-	lines = append(lines, styleAccent.Render("└"+strings.Repeat("─", inner+2)+"┘"))
-	return lines
+	return renderSheet("Make durable — "+displayName(s), body)
 }

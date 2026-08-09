@@ -28,8 +28,8 @@ func TestPreviewSourceKind(t *testing.T) {
 		want previewKind
 	}{
 		{"nil", nil, previewNone},
-		{"pane wins over id", &model.Session{ID: "abc", TmuxPaneID: "%1"}, previewPane},
-		{"id only", &model.Session{ID: "abc"}, previewLogs},
+		{"pane wins over sessionId", &model.Session{SessionID: "abc", TmuxPaneID: "%1"}, previewPane},
+		{"transcript when pane-less", &model.Session{SessionID: "abc"}, previewTranscript},
 		{"pane only", &model.Session{TmuxPaneID: "%2"}, previewPane},
 		{"neither", &model.Session{}, previewNone},
 	}

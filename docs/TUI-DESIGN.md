@@ -159,7 +159,7 @@ everything teaches nothing. Rules:
 | working, durable | `enter attach · o tmux · x stop · d dispatch · / filter · ? help` |
 | stopped / failed | `R respawn · l logs · d dispatch · / filter · ? help` |
 | idle / unknown | `enter attach · o tmux · x stop · l logs · / filter · ? help` |
-| nothing selected / empty | `d dispatch · / filter · ? help · q quit` |
+| nothing selected / empty | `d dispatch · / filter · ? help · q quit` (narrow terminals may append `tab preview` while under the 6-hint cap) |
 | input modes | `enter submit · esc cancel` |
 | logs | `j/k scroll · pgup/pgdn page · q back` |
 
@@ -173,17 +173,17 @@ accent for one poll cycle.
   ─────────────────────────────────────────────────────────────────────────────
   GLANCE                              ACT ON SELECTION
    /       filter as you type          enter  attach (the obvious thing)
-   1–4     only needs / working /      r      reply to a blocked session
-           idle / done                 o      open in tmux, don't switch
-   esc     clear filter / overlay      D      make durable (bare sessions)
-   tab     fullscreen preview          d      dispatch background task here
-           (narrow terminals)          x      stop… asks first
-                                       R      respawn stopped/failed
-  MOVE                                 l      logs pager
-   j/k ↑↓  select session
-   g / G   first / last               COMING (v1.1): n new session ·
-   ^d/^u   half page                  h resume a conversation · : commands
-   q       quit — instant, no prompt
+   1–4     only needs / working /             come back: ← at the empty
+           idle / done                        prompt · tmux jumps: prefix+L
+   esc     clear filter / overlay      r      reply to a blocked session
+   tab     fullscreen preview          o      open in tmux, don't switch
+           (narrow terminals)          D      make durable (bare sessions)
+                                       d      dispatch background task here
+  MOVE                                 x      stop… asks first
+   j/k ↑↓  select session              R      respawn stopped/failed
+   g / G   first / last                l      logs pager
+   ^d/^u   half page                  COMING (v1.1): n new session ·
+   q       quit — instant, no prompt  h resume conversation · : commands
   ─────────────────────────────────────────────────────────────────────────────
   sources: supervisor ✓ 2s · tmux ✓ 4s · git ✓ 11s          v0.4.0 · in-process
 ```
@@ -212,7 +212,10 @@ as the completeness report.
 hints. A sixth color would be worse; dim would bury a data-loss risk.
 
 Terminal-default background always; lipgloss downsampling covers low-color
-SSH. Selection = reverse video of the row's own state color.
+SSH. Selection = one unbroken inverted bar in accent across every row
+segment, with a `▶` prefix (v2 decision, superseding the earlier
+state-tinted-reverse idea: accent's role IS "where you are"; tinting the
+bar by state made the highlight compete with the state glyph).
 
 ### Row anatomy
 
@@ -243,7 +246,7 @@ NEEDS INPUT (1)
 WORKING (2)
   stables
     main
-    ● payments-recon                                       ⌁bare        2h10m
+    ● payments-recon                                       ⌁bare        2h 10m
 
 58 (list pane at a 140-col split)
 NEEDS INPUT (1)
@@ -253,7 +256,7 @@ NEEDS INPUT (1)
 WORKING (2)
   stables
     main
-    ● payments-recon                             ⌁bare  2h10m
+    ● payments-recon                             ⌁bare  2h 10m
 
 38 (list pane at the 110-col split minimum)
 NEEDS INPUT (1)
@@ -262,7 +265,7 @@ NEEDS INPUT (1)
 >  ◐ auth-flow ref… ⚑ approval  ⧉  12m
 WORKING (2)
   stables · main
-   ● payments-recon      ⌁bare 2h10m
+   ● payments-recon      ⌁bare 2h 10m
 ```
 
 Degradation order as width shrinks: tmux target text → bare `⧉` →
@@ -293,7 +296,8 @@ information.
 
 ### Preview pane
 
-Caption line (accent): `preview · auth-flow refactor · pane dev:1.2 · 2s` —
+Caption line (accent): `PREVIEW · auth-flow refactor · pane dev:1.2 · 2s`
+(uppercase — it doubles as the panel title, and panel titles are uppercase) —
 **overrule of the shipped caption** to name its *source* (`pane <target>` vs
 `logs <id>`): the two sources have different fidelity and the user deserves
 to know which they're looking at.
@@ -313,7 +317,7 @@ No sessions at all:
 
 ```
         No Claude sessions anywhere on this box.
-        supervisor + tmux scanned 2s ago — a new session appears here within 5s.
+        supervisor + tmux scanned 2s ago — sessions appear within 5s.
 
           d   dispatch a background task from here
           or run `claude` in any repo — it shows up live.
@@ -425,7 +429,9 @@ source honesty · `humanDur` gains days (`3d`). Bar: a stranger answers
 - `n` **new interactive session**: creates/uses a tmux session named after
   the selected repo, new window running `claude` in that worktree,
   switch-client (workmux's adopt-and-switch recipe). Without a selection,
-  `n` first asks for a repo.
+  `n` first asks for a repo. Session naming follows sesh's convention
+  (git-repo-derived names) so clauditor-created sessions coexist cleanly
+  with a sesh/choose-tree navigation stack.
 - `h` **resume picker**: fullscreen list of recent conversations (from
   supervisor + `~/.claude` history), newest first, same row language;
   `enter` = resume in a tmux window, `esc` back.
@@ -477,6 +483,28 @@ persistence across launches · flat result view when filtering · toast queue.
    reserved keys (`n N h i :`) or the palette, never a frozen one.
 10. Every error string names the next action; no error is a dead end, and
     the cockpit never exits on a collector failure.
+
+---
+
+## 10. Ecosystem positioning (2026-08-09)
+
+The tmux-agent-monitoring space converged fast (tmuxpulse, mux, NTM; sesh
+and choose-tree for navigation). Positioning rules derived from surveying
+them:
+
+- **Never compete on navigation.** sesh + choose-tree own "take me
+  somewhere." Clauditor documents the `display-popup -E` binding (README)
+  so the cockpit overlays any workflow, and its `n` flow adopts sesh-style
+  git-derived session names rather than inventing a scheme.
+- **The load-bearing differentiators** — defend and deepen these, cut
+  anything that doesn't serve them: (1) supervisor truth — state and
+  `waitingFor` read from Claude Code itself, not inferred from pane-output
+  hashing like tmuxpulse/mux, which cannot distinguish "quiet, thinking"
+  from "quiet, waiting on you"; (2) reply-without-attach; (3) the SSE/
+  mobile layer, which none of the surveyed tools have.
+- **Technique to adopt in v2b:** tmuxpulse's render economics — hash each
+  capture (FNV), skip re-render when unchanged — composes with the
+  control-mode event push for near-zero idle cost.
 
 ---
 *Where this spec and the code disagree, this spec wins; where this spec and

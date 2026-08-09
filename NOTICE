@@ -26,7 +26,12 @@ ideas only, re-expressed from scratch.
    https://github.com/asheshgoplani/agent-deck
    License: MIT — Copyright (c) 2025 Ashesh Goplani
    Studied for information architecture (grouping, needs-attention
-   surfacing) and remote-control protocol design. No code ported.
+   surfacing) and remote-control protocol design. Cockpit v2 additionally
+   adapted (re-implemented with inline attribution comments): the ANSI
+   blank-collapse/SGR-termination discipline for embedded captures, the
+   two-component humanized age wording, budget-based row truncation, the
+   panel-title idiom, and the pre-join/post-join width-measurement
+   discipline. See docs/TUI-CRAFT.md.
 
 4. claude-tmux
    https://github.com/nielsgroen/claude-tmux
@@ -35,3 +40,13 @@ ideas only, re-expressed from scratch.
    ported (AGPL is outside this project's port allowlist). Cited as prior
    art for: pane-id-as-canonical-handle, git-context-driven action gating,
    tolerant tab-separated tmux format parsing.
+
+5. agent-manager
+   https://github.com/YoanWai/agent-manager
+   License: Apache-2.0 — Copyright 2026 Yoan Wai and the agent-manager
+   contributors
+   Adapted: ANSI sanitation approach for embedding captured terminal
+   output (dangerous-sequence stripping, per-line SGR termination);
+   tonal-surface visual system (derived mix() tone ladder, paint
+   primitive); adaptive preview cadence with settle debounce. All adapted
+   logic re-implemented in Go for clauditor; see docs/TUI-CRAFT.md.
