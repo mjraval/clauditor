@@ -711,21 +711,21 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		return m.attach(sess)
 	case "o":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		return m, openInTmuxCmd(m.ctx, m.actionC, sess)
 	case "r":
 		sess := m.selectedSession()
 		if !replyEnabled(sess) {
-			m.statusMsg, m.statusErr = "reply needs a session waiting on input with a background id (attach for others)", true
+			m.setStatus("reply needs a session waiting on input with a background id (attach for others)", true)
 			return m, nil
 		}
 		m.mode = modeReply
@@ -734,7 +734,7 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		m.mode = modeLogs
@@ -748,11 +748,11 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		if sess.ID == "" {
-			m.statusMsg, m.statusErr = "session has no background id — can't stop from here", true
+			m.setStatus("session has no background id — can't stop from here", true)
 			return m, nil
 		}
 		m.mode = modeConfirmStop
@@ -761,14 +761,14 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "R":
 		sess := m.selectedSession()
 		if !respawnEnabled(sess) {
-			m.statusMsg, m.statusErr = "respawn only applies to stopped/failed sessions with a background id", true
+			m.setStatus("respawn only applies to stopped/failed sessions with a background id", true)
 			return m, nil
 		}
 		return m, respawnCmd(m.ctx, m.actionC, sess)
 	case "D":
 		sess := m.selectedSession()
 		if sess == nil {
-			m.statusMsg, m.statusErr = "no session selected", true
+			m.setStatus("no session selected", true)
 			return m, nil
 		}
 		toast, openSheet := durabilityAction(sess)
@@ -777,10 +777,42 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.durableSess = sess
 			return m, nil
 		}
-		m.statusMsg, m.statusErr = toast, false
+		m.setStatus(toast, false)
 		return m, nil
 	}
 	return m, nil
+}
+
+// setStatus records an action-feedback toast. EVERY status assignment goes
+// through here so statusAt is always stamped — a dozen call sites once set
+// the message without the timestamp and the toast never rendered (QA finding:
+// half the app's contextual feedback was dead code).
+func (m *Model) setStatus(msg string, isErr bool) {
+	m.statusMsg, m.statusErr, m.statusAt = msg, isErr, time.Now()
+}
+
+// worktreeBranch resolves the branch label for a session's worktree from the
+// snapshot (falling back to the worktree basename; "" when unbound).
+func (m Model) worktreeBranch(s *model.Session) string {
+	if s == nil || s.Worktree == "" {
+		return ""
+	}
+	if m.snap != nil {
+		for _, r := range m.snap.Repos {
+			for _, wt := range r.Worktrees {
+				if wt.Path == s.Worktree {
+					if wt.Branch != "" {
+						return wt.Branch
+					}
+					break
+				}
+			}
+		}
+	}
+	if i := strings.LastIndexByte(s.Worktree, '/'); i >= 0 {
+		return s.Worktree[i+1:]
+	}
+	return s.Worktree
 }
 
 // halfPage moves the cursor a half-body of selectable rows (ctrl+d/ctrl+u),
@@ -929,7 +961,7 @@ func (m Model) handleDispatchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		m.dispatchInput.Blur()
 		if prompt == "" {
-			m.statusMsg, m.statusErr = "dispatch canceled: empty prompt", true
+			m.setStatus("dispatch canceled: empty prompt", true)
 			return m, nil
 		}
 		return m, dispatchCmd(m.ctx, m.actionC, m.snap, m.selectedSession(), prompt)
@@ -951,11 +983,11 @@ func (m Model) handleReplyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		m.replyInput.Blur()
 		if text == "" {
-			m.statusMsg, m.statusErr = "reply canceled: empty text", true
+			m.setStatus("reply canceled: empty text", true)
 			return m, nil
 		}
 		if !replyEnabled(sess) {
-			m.statusMsg, m.statusErr = "selection no longer accepts a reply", true
+			m.setStatus("selection no longer accepts a reply", true)
 			return m, nil
 		}
 		return m, replyCmd(m.ctx, m.actionC, sess, text)
@@ -1038,7 +1070,11 @@ func (m Model) renderFrame() string {
 		bg := m.listLinesPlain(width, bodyH)
 		body = overlayCenter(bg, makeDurableSheet(m.durableSess), sheetWidth, width, bodyH)
 		footer = styleFooterBar.Render("t continue in tmux · b background it · esc cancel")
-	case modeFilter, modeDispatch, modeReply, modeConfirmStop:
+	case modeConfirmStop:
+		bg := m.listLinesPlain(width, bodyH)
+		body = overlayCenter(bg, makeStopSheet(m.confirmSess), sheetWidth, width, bodyH)
+		footer = styleFooterBar.Render("y stop · n/esc cancel")
+	case modeFilter, modeDispatch, modeReply:
 		body = m.bodyLines(width, bodyH)
 		footer = FooterText(footerInput)
 	default:
@@ -1455,9 +1491,11 @@ func (m Model) statusLineRow() string {
 	case modeDispatch:
 		target := "(no session selected)"
 		if s := m.selectedSession(); s != nil {
+			// Same repo·branch language the row tree uses — never a raw path
+			// (QA finding: repo + absolute worktree path rendered doubled).
 			target = s.Repo
-			if s.Worktree != "" {
-				target += "/" + s.Worktree
+			if b := m.worktreeBranch(s); b != "" {
+				target += " · " + b
 			}
 		}
 		return fmt.Sprintf("dispatch → %s: %s", target, m.dispatchInput.View())
@@ -1467,12 +1505,7 @@ func (m Model) statusLineRow() string {
 			target = displayName(s)
 		}
 		return fmt.Sprintf("reply → %s: %s", target, m.replyInput.View())
-	case modeConfirmStop:
-		name := ""
-		if m.confirmSess != nil {
-			name = displayName(m.confirmSess)
-		}
-		return ErrorText(fmt.Sprintf("stop %q? (y/n)", name))
+	// modeConfirmStop renders as a centered sheet (View), never a status line.
 	default:
 		// A fetch outage is the headline while it lasts: keep the last good
 		// snapshot on screen (§5) and name the next action in red.

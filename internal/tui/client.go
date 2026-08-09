@@ -17,6 +17,7 @@ import (
 	"github.com/mjraval/clauditor/internal/config"
 	"github.com/mjraval/clauditor/internal/model"
 	"github.com/mjraval/clauditor/internal/store"
+	"github.com/mjraval/clauditor/internal/transcript"
 )
 
 // Source fetches fleet snapshots. Two implementations: daemonSource talks to
@@ -130,15 +131,25 @@ func (l *localSource) Fetch(ctx context.Context) (*model.Snapshot, error) {
 // collectors (mirrors internal/api/handlers.go's handleLogs source
 // selection).
 func (l *localSource) FetchLogs(ctx context.Context, sess *model.Session, lines int) (string, error) {
+	// Transcript first: the same clean ❯/●/⚒ conversation the preview shows,
+	// with a deeper tail for the pager. `claude logs` is a raw terminal
+	// replay — its cursor/clear sequences EXECUTE against our own alt-screen
+	// if passed through (QA blocker: the pager blanked the whole frame), and
+	// stripped it reads as mashed words. Only the fallback uses it, stripped.
+	if sess.SessionID != "" {
+		if path, ok := transcript.Resolve(sess.SessionID); ok {
+			return strings.Join(transcript.RenderFile(path, 1024*1024), "\n"), nil
+		}
+	}
 	switch {
 	case sess.ID != "":
 		out, err := l.poller.Fleet.Claude.Logs(ctx, sess.ID, 256*1024)
-		return string(out), err
+		return string(collect.StripANSI(out)), err
 	case sess.TmuxPaneID != "":
 		out, err := l.poller.Fleet.Tmux.CapturePane(ctx, sess.TmuxPaneID, lines, false)
 		return string(out), err
 	default:
-		return "", fmt.Errorf("session has neither a background id nor a tmux pane")
+		return "", fmt.Errorf("session has neither a background id nor a tmux pane — attach instead (enter)")
 	}
 }
 

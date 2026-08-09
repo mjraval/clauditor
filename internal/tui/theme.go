@@ -115,7 +115,9 @@ func clampDisplay(s string, width int) string {
 		return s
 	}
 	if ansi.StringWidth(s) > width {
-		return ansi.Truncate(s, width, "")
+		// "…" tail: a hard cut mid-word gives no cue content is missing
+		// (QA finding at 60×15: header rendered "[in-pro").
+		return ansi.Truncate(s, width, "…")
 	}
 	return s
 }
@@ -163,7 +165,9 @@ func initStyles() {
 	styleFailed = lipgloss.NewStyle().Foreground(colFailed).Underline(true)
 	styleDim = lipgloss.NewStyle().Foreground(colDim)
 	styleAccent = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleErr = lipgloss.NewStyle().Foreground(colFailed).Bold(true)
+	// Underlined: red is never hue-only (§5 colorblind rule — QA found the
+	// stale chip, the app's core trust signal, was the one color-only red).
+	styleErr = lipgloss.NewStyle().Foreground(colFailed).Bold(true).Underline(true)
 
 	styleRepo = lipgloss.NewStyle().Foreground(lipgloss.Color(hexText)).Bold(true)
 	styleBucket = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
