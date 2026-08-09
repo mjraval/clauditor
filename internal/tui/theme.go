@@ -29,10 +29,9 @@ const (
 
 // Derived tones (hex), computed once at package load.
 var (
-	tonePanel    = mix(hexBg, hexSurface, 0.55) // list rail fill
-	toneBlock    = mix(hexBg, hexSurface, 0.35) // sheets / toasts
-	toneSelected = hexSurface                   // reserved (state-colored bar wins)
-	toneRule     = mix(hexBg, hexText, 0.22)    // hairline seam / rules
+	tonePanel = mix(hexBg, hexSurface, 0.55) // list rail fill
+	toneBlock = mix(hexBg, hexSurface, 0.35) // sheets / toasts
+	toneRule  = mix(hexBg, hexText, 0.22)    // hairline seam / rules
 )
 
 // mix blends two hex colors; ratio 0 returns a, 1 returns b. Derived tones use
@@ -149,9 +148,7 @@ var (
 	styleBucket  lipgloss.Style // bucket header (accent bold)
 	styleTitle   lipgloss.Style // panel title (accent bold)
 	styleRule    lipgloss.Style // hairline / seam
-	styleCaption lipgloss.Style // (retained) preview caption
-	stylePreview lipgloss.Style // (retained) dim preview body
-	styleSep     lipgloss.Style // (retained) legacy separator
+	stylePreview lipgloss.Style // dim preview / transcript body
 
 	// footer
 	styleFooterBar lipgloss.Style
@@ -172,9 +169,7 @@ func initStyles() {
 	styleBucket = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleRule = lipgloss.NewStyle().Foreground(lipgloss.Color(toneRule))
-	styleCaption = lipgloss.NewStyle().Foreground(colAccent)
 	stylePreview = lipgloss.NewStyle().Foreground(colDim)
-	styleSep = lipgloss.NewStyle().Foreground(colDim)
 
 	styleFooterBar = lipgloss.NewStyle().Foreground(colDim)
 

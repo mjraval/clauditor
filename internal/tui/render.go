@@ -307,6 +307,24 @@ func rowStyle(row Row, selected bool) lipgloss.Style {
 	return style
 }
 
+// rowContentStyle is the foreground style for a painted row (no reverse — the
+// selected-row highlight is drawn as an inverted painted bar in renderListRow,
+// not via lipgloss reverse). Keeps the state color semantics (§5).
+func rowContentStyle(row Row) lipgloss.Style {
+	switch row.Kind {
+	case RowBucket:
+		return styleBucket
+	case RowRepo:
+		return styleRepo
+	case RowWorktree:
+		return styleDim
+	case RowSession:
+		return sessionStyle(row.Session)
+	default:
+		return styleDim
+	}
+}
+
 // sessionStyle is the state → color mapping (SPEC-driven: needs-input
 // yellow/bold, working green, failed red+underline, everything else dim).
 func sessionStyle(s *model.Session) lipgloss.Style {
