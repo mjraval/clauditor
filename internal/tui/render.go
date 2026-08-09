@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mjraval/clauditor/internal/model"
+	"github.com/mjraval/clauditor/internal/usage"
 )
 
 // Cockpit palette — matches the WebUI (web/static): terminal-default bg,
@@ -365,7 +366,7 @@ func RenderRow(row Row, width int, selected bool) string {
 // session is working), total, data-source label, and last-refresh age. The
 // spinner argument is the current animation frame ("" = show the static ●).
 // Kept a pure function so the header content is unit-testable without a TTY.
-func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Time, filter StateFilter, query, spinner string) string {
+func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Time, filter StateFilter, query, spinner string, costEnabled bool) string {
 	needs, working, total := 0, 0, 0
 	if snap != nil {
 		total = len(snap.Sessions)
@@ -387,7 +388,7 @@ func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Ti
 		styleNeeds.Render(fmt.Sprintf("◐ %d need input", needs)),
 		styleWorking.Render(fmt.Sprintf("%s %d working", workGlyph, working)),
 		styleDim.Render(fmt.Sprintf("%d total", total)),
-		styleDim.Render("["+sourceLabel+"]"),
+		styleDim.Render("[" + sourceLabel + "]"),
 		freshnessChip(lastFetch, now, supervisorAge(snap)),
 	}
 	line := strings.Join(segs, dot)
@@ -397,6 +398,14 @@ func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Ti
 	if query != "" {
 		line += dot + styleAccent.Render("/"+query)
 	}
+	// Fleet-total working cost (docs/MESSAGING.md §4.2, quota awareness —
+	// SPEC's "N parallel ≈ N× burn"): dim, appended only when [usage].
+	// track_cost is on, summing only the sessions the poller could
+	// actually price (CostKnown) so an unpriced session is silently
+	// excluded from the total rather than reported as free.
+	if costEnabled && snap != nil {
+		line += dot + styleDim.Render(usage.FormatUSD(fleetCostMicroUSD(snap))+" working")
+	}
 	// Collector-failure segments — appended in red only when a collector is
 	// behind; healthy collectors stay silent (calm is a feature, §3).
 	if snap != nil {
@@ -405,6 +414,18 @@ func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Ti
 		}
 	}
 	return line
+}
+
+// fleetCostMicroUSD sums CostMicroUSD across every session the poller was
+// able to price (CostKnown) — the header's quota-awareness total.
+func fleetCostMicroUSD(snap *model.Snapshot) int64 {
+	var total int64
+	for _, s := range snap.Sessions {
+		if s.CostKnown {
+			total += s.CostMicroUSD
+		}
+	}
+	return total
 }
 
 // freshnessChip is the data-age chip: bare dim "3s" while fresh, red

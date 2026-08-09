@@ -43,3 +43,10 @@ worktree_url_template = ""     # e.g. "https://{branch}.dev.example.com"
 
 [notify]
 debounce_seconds = 30
+
+[usage]
+track_cost = false            # per-session token/cost readout (docs/MESSAGING.md
+                               # §4.2, internal/usage) — off by default: computing
+                               # cost re-reads each session's whole transcript file
+                               # on every poll tick that changed it (cached, but
+                               # still extra disk IO you opt into)

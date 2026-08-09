@@ -50,3 +50,13 @@ ideas only, re-expressed from scratch.
    tonal-surface visual system (derived mix() tone ladder, paint
    primitive); adaptive preview cadence with settle debounce. All adapted
    logic re-implemented in Go for clauditor; see docs/TUI-CRAFT.md.
+
+6. mux
+   https://github.com/lunemis/mux
+   License: MIT — Copyright (c) 2026 mux contributors
+   Adapted: the transcript-usage cost mechanism (tmux/claude.go) — reading
+   per-turn `message.usage` token counts out of a Claude Code transcript
+   JSONL and pricing them against a per-model rate table. Re-implemented
+   in Go for clauditor as `internal/usage` (whole-file cumulative read
+   instead of a TTL cache, versioned/dated pricing table with unknown
+   models reported rather than guessed); see docs/MESSAGING.md §2/§4.2.

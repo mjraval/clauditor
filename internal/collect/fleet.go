@@ -11,9 +11,10 @@ import (
 // failing the cycle — except the claude collector, whose failure is the
 // caller's signal that the supervisor surface is unavailable.
 type Fleet struct {
-	Claude *ClaudeCollector
-	Tmux   *TmuxCollector
-	Git    *GitCollector
+	Claude   *ClaudeCollector
+	Tmux     *TmuxCollector
+	Git      *GitCollector
+	Sessions *SessionsCollector // presence-registry enrichment (docs/MESSAGING.md §4.1)
 
 	Repos         []string
 	WorkspaceDirs []string
@@ -22,13 +23,14 @@ type Fleet struct {
 
 // FleetData is one cycle's raw output.
 type FleetData struct {
-	Agents    []AgentEntry
-	Panes     []Pane
-	Procs     []Proc
-	Repos     []RepoInfo
-	ClaudeErr error
-	TmuxErr   error
-	GitErr    error
+	Agents      []AgentEntry
+	Panes       []Pane
+	Procs       []Proc
+	Repos       []RepoInfo
+	SessionRegs []SessionReg // presence registry, keyed by SessionID for enrichment
+	ClaudeErr   error
+	TmuxErr     error
+	GitErr      error
 }
 
 // Collect runs one full cycle.
@@ -43,6 +45,19 @@ func (f *Fleet) Collect(ctx context.Context) FleetData {
 	d.Panes, d.TmuxErr = f.Tmux.Panes(ctx)
 	if d.TmuxErr != nil {
 		slog.Warn("tmux collector failed", "err", d.TmuxErr)
+	}
+
+	// Presence-registry enrichment (docs/MESSAGING.md §4.1): cheap, local,
+	// read-only. Never a state authority, so a failure here only drops
+	// enrichment for the cycle — it never fails the fleet collection.
+	sessions := f.Sessions
+	if sessions == nil {
+		sessions = NewSessionsCollector()
+	}
+	if regs, err := sessions.Registry(); err != nil {
+		slog.Warn("sessions registry read failed", "err", err)
+	} else {
+		d.SessionRegs = regs
 	}
 	if len(d.Panes) > 0 || len(d.Agents) > 0 {
 		var err error

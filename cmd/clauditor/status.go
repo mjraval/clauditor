@@ -13,18 +13,27 @@ import (
 
 	"github.com/mjraval/clauditor/internal/model"
 	"github.com/mjraval/clauditor/internal/store"
+	costusage "github.com/mjraval/clauditor/internal/usage" // aliased: main.go already has a package-level func usage()
 )
 
 func cmdStatus(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	load := commonFlags(fs)
 	asJSON := fs.Bool("json", false, "print the raw snapshot as JSON")
+	costFlag := fs.Bool("cost", false, "show per-session token/cost (docs/MESSAGING.md §4.2); implied by [usage].track_cost")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	cfg, err := load()
 	if err != nil {
 		return err
+	}
+	showCost := *costFlag || cfg.Usage.TrackCost
+	if showCost {
+		// --cost alone (config off) still requests the readout for this
+		// run — enable it on the loaded copy so the poller actually
+		// computes it; this never touches the config file on disk.
+		cfg.Usage.TrackCost = true
 	}
 	p := &store.Poller{Fleet: newFleet(cfg, true), Store: store.New(), Cfg: cfg}
 	snap := p.RunOnce(ctx)
@@ -34,7 +43,7 @@ func cmdStatus(ctx context.Context, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(snap)
 	}
-	renderStatus(os.Stdout, snap)
+	renderStatus(os.Stdout, snap, showCost)
 	return nil
 }
 
@@ -57,21 +66,32 @@ func glyph(s *model.Session) string {
 	}
 }
 
-func renderStatus(w io.Writer, snap *model.Snapshot) {
+func renderStatus(w io.Writer, snap *model.Snapshot, showCost bool) {
 	if snap == nil || len(snap.Repos) == 0 {
 		fmt.Fprintln(w, "no repos configured and no sessions found — check ~/.config/clauditor/config.toml")
 		return
 	}
 	needs, working := 0, 0
+	var fleetCostMicro int64
+	fleetCostKnown := false
 	for _, s := range snap.Sessions {
 		if s.NeedsInput() {
 			needs++
 		} else if s.State == model.StateWorking {
 			working++
 		}
+		if s.CostKnown {
+			fleetCostKnown = true
+			fleetCostMicro += s.CostMicroUSD
+		}
 	}
-	fmt.Fprintf(w, "clauditor · %d sessions · %d need input · %d working · v%d %s\n\n",
+	fmt.Fprintf(w, "clauditor · %d sessions · %d need input · %d working · v%d %s",
 		len(snap.Sessions), needs, working, snap.Version, snap.GeneratedAt.Format("15:04:05"))
+	if showCost && fleetCostKnown {
+		fmt.Fprintf(w, " · %s working", costusage.FormatUSD(fleetCostMicro))
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w)
 
 	for _, r := range snap.Repos {
 		total := 0
@@ -103,14 +123,14 @@ func renderStatus(w io.Writer, snap *model.Snapshot) {
 			}
 			fmt.Fprintf(w, "  %s%s%s\n", branch, dirty, managed)
 			for _, s := range wt.Sessions {
-				fmt.Fprintf(w, "    %s %s\n", glyph(s), sessionLine(s))
+				fmt.Fprintf(w, "    %s %s\n", glyph(s), sessionLine(s, showCost))
 			}
 		}
 		fmt.Fprintln(w)
 	}
 }
 
-func sessionLine(s *model.Session) string {
+func sessionLine(s *model.Session, showCost bool) string {
 	var b strings.Builder
 	state := s.State
 	if s.WaitingFor != "" {
@@ -125,6 +145,9 @@ func sessionLine(s *model.Session) string {
 	}
 	if s.ID != "" {
 		fmt.Fprintf(&b, " · %s", s.ID)
+	}
+	if showCost && s.CostKnown {
+		fmt.Fprintf(&b, " · %s tok · %s", costusage.FormatTokens(s.Tokens), costusage.FormatUSD(s.CostMicroUSD))
 	}
 	return b.String()
 }

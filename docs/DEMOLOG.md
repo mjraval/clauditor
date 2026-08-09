@@ -238,3 +238,66 @@ every size. On 140×40 with a WORKING supervisor session selected, the preview
 showed readable live pane content (`PREVIEW · … · pane claudinator:1.1`); the
 needs-input session's preview showed clean `❯`/`●`/`⚒` transcript lines — no
 word-mash.
+
+## Peer-reachability enrichment (2026-08-09)
+
+`docs/MESSAGING.md` §4.1's presence-registry read: a new `SessionsCollector`
+(`internal/collect/sessions.go`) globs `~/.claude/sessions/*.json` each poll
+cycle and matches entries to correlated sessions by `sessionId`
+(`model.EnrichPeerReachable`), setting `peerReachable: true` when the
+registry shows a live messaging socket + `peerProtocol > 0`. Read-only,
+supplementary — the supervisor poll stays the sole state authority.
+
+```sh
+make build
+./bin/clauditor status --json | jq '.sessions[] | {sessionId, name, peerReachable}'
+```
+
+Verified live 2026-08-09: of 7 concurrent sessions on this machine, the one
+background session with an active `messagingSocketPath`
+(`/run/user/1000/cc-socks/2684716.sock`) showed `"peerReachable": true`; the
+six interactive sessions (`messagingSocketPath: null` in their registry
+files) showed `false`. The TUI's preview caption appends `⇄ peer-reachable`
+for the selected session when true — no change to the row's single badge
+slot.
+
+## Token/cost readout (2026-08-09)
+
+`docs/MESSAGING.md` §4.2's cost estimator: a new `internal/usage` package
+sums per-turn `message.usage` (input/output/cache-read/cache-creation
+tokens, keyed by model — a session can switch models mid-conversation) out
+of the whole transcript file (`internal/transcript.Resolve`, capped at 32MB,
+tail-truncated past that with `Truncated` set), then prices it against a
+dated table (`PricingAsOf`, currently 2026-08-09) covering the Opus/Sonnet/
+Haiku/Fable/Mythos families. An unpriced model reports `CostKnown: false`
+rather than a guessed $0; cache read/write rates are derived from
+Anthropic's published fixed ratio to the input rate (0.1×/1.25×), since
+there's no separate per-model cache price to look up. Cost is int64
+microdollars end to end, formatted to `$X.XX` only at the display edge.
+
+Gated behind `[usage].track_cost` (default off — extra disk IO) and cached
+per `(sessionID, transcript file size+mtime)` in `store.Poller.enrichUsage`,
+a post-correlation step mirroring `EnrichPeerReachable`, so a poll tick with
+no transcript changes never re-reads a session's file. `model.Session`
+carries `Tokens`/`CostMicroUSD`/`CostKnown` (so `/api/v1/state` and `status
+--json` get it for free); the cockpit shows the selected session's tokens +
+cost in the preview caption and a dim fleet-total in the header, both only
+when `track_cost` is on and the session's own `CostKnown` is true; `status
+--cost` (or the config flag) adds the same to the CLI table.
+
+```sh
+./bin/clauditor status --cost --config <cfg-with-usage.track_cost=true>
+```
+
+Verified live 2026-08-09 against real `~/.claude/projects/*.jsonl`
+transcripts: every session reported `costKnown: true` (Opus/Fable-family
+models, no unpriced turns), the per-session and fleet-total figures
+rendered, and the numbers were cross-checked against an independent
+Python re-implementation of the same pricing math over the same file —
+token totals agreed exactly and cost agreed to within a microdollar
+(per-turn vs. summed-then-rounded rounding). (Actual token/cost figures
+are intentionally omitted here — they are private per-session data.)
+tmux capture-pane at 80×20, 100×30, and 140×40 showed zero
+row/column overflow with cost segments rendered; at 220×40 the preview
+caption's `<tok> tok · $<cost>` fragment was visible in full alongside the
+`⇄ peer-reachable` mention.
