@@ -239,15 +239,21 @@ func TestFooterText_ModalVariants(t *testing.T) {
 
 func TestFreshnessChip_StalePast15s(t *testing.T) {
 	now := time.Now()
-	if got := stripANSI(freshnessChip(now.Add(-3*time.Second), now)); got != "3s" {
+	if got := stripANSI(freshnessChip(now.Add(-3*time.Second), now, 0)); got != "3s" {
 		t.Errorf("fresh chip = %q, want bare 3s", got)
 	}
-	got := stripANSI(freshnessChip(now.Add(-22*time.Second), now))
+	got := stripANSI(freshnessChip(now.Add(-22*time.Second), now, 0))
 	if got != "stale 22s — retrying" {
 		t.Errorf("stale chip = %q, want %q", got, "stale 22s — retrying")
 	}
-	if got := stripANSI(freshnessChip(time.Time{}, now)); got != "never" {
+	if got := stripANSI(freshnessChip(time.Time{}, now, 0)); got != "never" {
 		t.Errorf("zero chip = %q, want never", got)
+	}
+	// Regression (QA fidelity): in-process mode fetches never fail, so a dead
+	// supervisor must surface via the collector age, not the snapshot age.
+	got = stripANSI(freshnessChip(now.Add(-1*time.Second), now, 21))
+	if got != "stale 21s — retrying" {
+		t.Errorf("supervisor-age staleness = %q, want %q", got, "stale 21s — retrying")
 	}
 }
 

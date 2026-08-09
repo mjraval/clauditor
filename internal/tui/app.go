@@ -1220,6 +1220,15 @@ func (m Model) renderListRow(i, width int) string {
 	if selected {
 		return paint(styleSelText.Render(text), width, 0, string(colAccent))
 	}
+	// The ⌁bare badge always renders in accent regardless of the row's state
+	// color — it is an invitation to act (D), and dimming it would bury a
+	// data-loss risk (TUI-DESIGN §5 overrule; QA fidelity finding).
+	if row.Kind == RowSession && strings.Contains(text, bareBadge) {
+		st := rowContentStyle(row)
+		before, after, _ := strings.Cut(text, bareBadge)
+		return paint(st.Render(before)+styleAccent.Render(bareBadge)+st.Render(after),
+			width, 0, tonePanel)
+	}
 	return paint(rowContentStyle(row).Render(text), width, 0, tonePanel)
 }
 
@@ -1304,7 +1313,9 @@ func (m Model) emptyState(width, height int) []string {
 	case width >= 64 && height >= 7: // full tier — exact v1 copy
 		lines = []string{
 			"No Claude sessions anywhere on this box.",
-			fmt.Sprintf("supervisor + tmux scanned %s — a new session appears here within 5s.", scan),
+			// ≤62 cells so it renders untruncated even in the split view's
+			// clamped 64-col list (QA fidelity finding).
+			fmt.Sprintf("supervisor + tmux scanned %s — sessions appear within 5s.", scan),
 			"",
 			"  d   dispatch a background task from here",
 			"  or run `claude` in any repo — it shows up live.",

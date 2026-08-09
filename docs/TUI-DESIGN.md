@@ -159,7 +159,7 @@ everything teaches nothing. Rules:
 | working, durable | `enter attach · o tmux · x stop · d dispatch · / filter · ? help` |
 | stopped / failed | `R respawn · l logs · d dispatch · / filter · ? help` |
 | idle / unknown | `enter attach · o tmux · x stop · l logs · / filter · ? help` |
-| nothing selected / empty | `d dispatch · / filter · ? help · q quit` |
+| nothing selected / empty | `d dispatch · / filter · ? help · q quit` (narrow terminals may append `tab preview` while under the 6-hint cap) |
 | input modes | `enter submit · esc cancel` |
 | logs | `j/k scroll · pgup/pgdn page · q back` |
 
@@ -296,7 +296,8 @@ information.
 
 ### Preview pane
 
-Caption line (accent): `preview · auth-flow refactor · pane dev:1.2 · 2s` —
+Caption line (accent): `PREVIEW · auth-flow refactor · pane dev:1.2 · 2s`
+(uppercase — it doubles as the panel title, and panel titles are uppercase) —
 **overrule of the shipped caption** to name its *source* (`pane <target>` vs
 `logs <id>`): the two sources have different fidelity and the user deserves
 to know which they're looking at.
@@ -316,7 +317,7 @@ No sessions at all:
 
 ```
         No Claude sessions anywhere on this box.
-        supervisor + tmux scanned 2s ago — a new session appears here within 5s.
+        supervisor + tmux scanned 2s ago — sessions appear within 5s.
 
           d   dispatch a background task from here
           or run `claude` in any repo — it shows up live.

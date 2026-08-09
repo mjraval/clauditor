@@ -28,6 +28,10 @@ var (
 // spinnerFrames animate the working indicator in the header (braille).
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// bareBadge marks non-durable sessions; it always renders in accent
+// (renderListRow) — never the row's state color (TUI-DESIGN §5 overrule).
+const bareBadge = "⌁bare"
+
 // glyph is the state marker (same visual language as `clauditor status`,
 // see cmd/clauditor/status.go's glyph()).
 func glyph(s *model.Session) string {
@@ -196,9 +200,11 @@ func sessionBody(s *model.Session, inner int) string {
 	var tiers []tier
 	switch {
 	case sessionBare(s): // ⌁bare risk badge never drops
-		tiers = []tier{{"⌁bare", 16}, {"⌁bare", 8}, {"⌁bare", 0}}
+		tiers = []tier{{bareBadge, 16}, {bareBadge, 8}, {bareBadge, 0}}
 	case s.TmuxTarget != "":
-		tiers = []tier{{"⧉ " + s.TmuxTarget, 16}, {"⧉", 16}, {"⧉", 8}, {"", 8}, {"", 0}}
+		// §5 order: target text drops, then the bare ⧉, and only THEN does
+		// waitingFor (attention info outranks the tmux nicety) truncate.
+		tiers = []tier{{"⧉ " + s.TmuxTarget, 16}, {"⧉", 16}, {"", 16}, {"", 8}, {"", 0}}
 	default:
 		tiers = []tier{{"", 16}, {"", 8}, {"", 0}}
 	}
@@ -373,7 +379,7 @@ func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Ti
 		styleWorking.Render(fmt.Sprintf("%s %d working", workGlyph, working)),
 		styleDim.Render(fmt.Sprintf("%d total", total)),
 		styleDim.Render("["+sourceLabel+"]"),
-		freshnessChip(lastFetch, now),
+		freshnessChip(lastFetch, now, supervisorAge(snap)),
 	}
 	line := strings.Join(segs, dot)
 	if filter != FilterAll {
@@ -392,9 +398,13 @@ func HeaderText(snap *model.Snapshot, sourceLabel string, lastFetch, now time.Ti
 	return line
 }
 
-// freshnessChip is the snapshot-age chip: bare dim "3s" while fresh, red
-// "stale 22s — retrying" once the last good snapshot is older than 15s (§5).
-func freshnessChip(lastFetch, now time.Time) string {
+// freshnessChip is the data-age chip: bare dim "3s" while fresh, red
+// "stale 22s — retrying" once the SUPERVISOR data is older than 15s (§5).
+// In in-process mode the fetch itself never fails (the poller always returns
+// a snapshot), so the chip must track the claude collector's age, not the
+// snapshot's — otherwise a dead supervisor renders as calm chrome forever
+// (QA fidelity finding).
+func freshnessChip(lastFetch, now time.Time, supervisorAgeSecs int64) string {
 	if lastFetch.IsZero() {
 		return styleDim.Render("never")
 	}
@@ -402,10 +412,26 @@ func freshnessChip(lastFetch, now time.Time) string {
 	if secs < 0 {
 		secs = 0
 	}
+	if int(supervisorAgeSecs) > secs {
+		secs = int(supervisorAgeSecs)
+	}
 	if secs > 15 {
 		return styleErr.Render(fmt.Sprintf("stale %ds — retrying", secs))
 	}
 	return styleDim.Render(fmt.Sprintf("%ds", secs))
+}
+
+// supervisorAge is the claude collector's seconds-since-success from the
+// snapshot, or 0 when unknown (never-succeeded stays calm at startup — the
+// first-fetch state covers that window).
+func supervisorAge(snap *model.Snapshot) int64 {
+	if snap == nil {
+		return 0
+	}
+	if age, ok := snap.CollectorAges["claude"]; ok && age > 0 {
+		return age
+	}
+	return 0
 }
 
 // collectorFailSegments returns red header segments for collectors that have
