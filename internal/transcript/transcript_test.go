@@ -118,3 +118,48 @@ func TestResolve_UsesConfigDir(t *testing.T) {
 		t.Errorf("Resolve of a missing id should be false")
 	}
 }
+
+// Regression (QA): one oversized line must not drop subsequent lines.
+func TestParse_OversizedLineDoesNotTruncateStream(t *testing.T) {
+	huge := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"` +
+		strings.Repeat("x", 9*1024*1024) + `"}]}}`
+	after := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I SHOULD APPEAR"}]}}`
+	entries := Parse([]byte(huge + "\n" + after + "\n"))
+	found := false
+	for _, e := range entries {
+		if strings.Contains(e.Text, "I SHOULD APPEAR") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("line after oversized line was dropped (%d entries)", len(entries))
+	}
+}
+
+// Regression (QA): a tail window that sits entirely inside one giant line
+// must not render as "(no transcript yet)".
+func TestRenderFile_SingleGiantLineTail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "big.jsonl")
+	giant := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"` +
+		strings.Repeat("y", 500*1024) + `"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(giant), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lines := RenderFile(path, 256*1024)
+	if len(lines) == 1 && lines[0] == "(no transcript yet)" {
+		t.Fatal("giant-line tail rendered as empty transcript — must distinguish")
+	}
+}
+
+// Regression (QA): sidechain (subagent) entries are filtered from the preview.
+func TestParseLine_SkipsSidechain(t *testing.T) {
+	side := `{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"subagent noise"}]}}`
+	if got := ParseLine([]byte(side)); len(got) != 0 {
+		t.Fatalf("sidechain entry rendered: %+v", got)
+	}
+	main := `{"type":"assistant","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"main thread"}]}}`
+	if got := ParseLine([]byte(main)); len(got) != 1 {
+		t.Fatalf("main-thread entry lost: %+v", got)
+	}
+}

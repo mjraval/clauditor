@@ -59,3 +59,8 @@ this machine on 2026-08-06 (Claude Code 2.1.223, tmux 3.4, git 2.54.0).
    ```
    and commit the new fixture file (`agents_v<newver>.json`). Parser is
    version-tolerant but fixtures should track reality.
+
+6. **Race detector in CI**: `go test -race` requires cgo (a C compiler);
+   this build box has none. If you set up CI, add a `-race` job on a
+   runner with gcc — the TUI's concurrency was verified by static tracing
+   (2026-08-09 QA), but the detector should back that up on every change.

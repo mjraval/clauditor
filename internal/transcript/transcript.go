@@ -15,7 +15,6 @@
 package transcript
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -71,6 +70,10 @@ func (e Entry) Line() string {
 type wireMessage struct {
 	Type    string          `json:"type"`
 	Message json.RawMessage `json:"message"`
+	// IsSidechain marks Task-tool/subagent turns interleaved into the same
+	// JSONL. The preview shows the MAIN thread; a busy subagent could
+	// otherwise flood the whole visible tail with its chatter (QA finding).
+	IsSidechain bool `json:"isSidechain"`
 }
 
 type wireInner struct {
@@ -100,6 +103,9 @@ func ParseLine(raw []byte) []Entry {
 	}
 	if msg.Type != "user" && msg.Type != "assistant" {
 		return nil // ai-title, mode, attachment, tool_result envelopes, …
+	}
+	if msg.IsSidechain {
+		return nil // subagent thread — main-thread turns only
 	}
 	var inner wireInner
 	if err := json.Unmarshal(msg.Message, &inner); err != nil {
@@ -199,12 +205,21 @@ func truncate(s string, n int) string {
 }
 
 // Parse renders every element of a JSONL transcript blob, in file order.
+// Lines are split manually rather than via bufio.Scanner: a Scanner with any
+// buffer cap aborts the whole stream on one oversized line (QA finding —
+// "one 9MB tool_result silently dropped every later turn"), while manual
+// splitting skips only the unparseable element, honoring the package promise
+// that a corrupt line never drops the rest.
 func Parse(data []byte) []Entry {
 	var out []Entry
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024) // long tool_use/result lines
-	for sc.Scan() {
-		out = append(out, ParseLine(sc.Bytes())...)
+	for len(data) > 0 {
+		var line []byte
+		if i := bytes.IndexByte(data, '\n'); i >= 0 {
+			line, data = data[:i], data[i+1:]
+		} else {
+			line, data = data, nil
+		}
+		out = append(out, ParseLine(line)...)
 	}
 	return out
 }
@@ -263,7 +278,12 @@ func readTail(path string, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	if start > 0 {
-		if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		// Drop the leading partial line ONLY when a complete line follows it —
+		// when the whole window sits inside one line larger than maxBytes,
+		// dropping would discard everything and the preview would lie with
+		// "(no transcript yet)" (QA finding). Keeping the partial is safe:
+		// the tolerant parser skips what it can't decode.
+		if i := bytes.IndexByte(data, '\n'); i >= 0 && i+1 < len(data) {
 			data = data[i+1:]
 		}
 	}
@@ -292,6 +312,11 @@ func RenderFile(path string, maxBytes int64) []string {
 	}
 	entries := Parse(data)
 	if len(entries) == 0 {
+		// Distinguish "nothing happened yet" from "the recent entries are too
+		// large/opaque to render" — the latter must not read as an idle session.
+		if len(bytes.TrimSpace(data)) > 0 {
+			return []string{"(recent transcript entries too large to preview — attach for detail)"}
+		}
 		return []string{"(no transcript yet)"}
 	}
 	out := make([]string, len(entries))
