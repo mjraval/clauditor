@@ -86,7 +86,7 @@ API. So:
   (`peerProtocol` present + live socket), so a human knows a session can be
   messaged from another Claude session — without clauditor sending anything.
 
-## 2. mux (MIT — Copyright (c) 2026 lunemis contributors)
+## 2. mux (MIT — Copyright (c) 2026 mux contributors)
 
 A tmux session switcher with live preview and AI-CLI detection. Convergent
 with clauditor's cockpit; two features worth taking:

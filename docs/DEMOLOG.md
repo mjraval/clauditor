@@ -290,14 +290,14 @@ when `track_cost` is on and the session's own `CostKnown` is true; `status
 ```
 
 Verified live 2026-08-09 against real `~/.claude/projects/*.jsonl`
-transcripts on this machine: 7 sessions all reported `costKnown: true`
-(models `claude-opus-5`/`claude-opus-4-8`/`claude-fable-5`, no unpriced
-turns encountered), tokens ranging 317.6k–1.2M and costs $35.47–$466.16,
-fleet total `$1256.25 working` in the header. Cross-checked one session
-(881,985 tokens) against an independent Python re-implementation of the
-same pricing math reading the same file: totals agreed exactly, cost
-agreed to within $0.000001 (per-turn vs. summed-then-rounded microdollar
-rounding). tmux capture-pane at 80×20, 100×30, and 140×40 showed zero
+transcripts: every session reported `costKnown: true` (Opus/Fable-family
+models, no unpriced turns), the per-session and fleet-total figures
+rendered, and the numbers were cross-checked against an independent
+Python re-implementation of the same pricing math over the same file —
+token totals agreed exactly and cost agreed to within a microdollar
+(per-turn vs. summed-then-rounded rounding). (Actual token/cost figures
+are intentionally omitted here — they are private per-session data.)
+tmux capture-pane at 80×20, 100×30, and 140×40 showed zero
 row/column overflow with cost segments rendered; at 220×40 the preview
 caption's `<tok> tok · $<cost>` fragment was visible in full alongside the
 `⇄ peer-reachable` mention.
