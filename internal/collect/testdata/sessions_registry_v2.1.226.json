@@ -1,0 +1,93 @@
+[
+  {
+    "pid": 125770,
+    "sessionId": "9640f722-9992-4d18-91b1-3a9d272c36d2",
+    "cwd": "/home/rishi/projects/monorepo/stables-web-abilities",
+    "kind": "interactive",
+    "entrypoint": "cli",
+    "version": "2.1.203",
+    "peerProtocol": 1,
+    "messagingSocketPath": null,
+    "name": "redacted-125770",
+    "nameSource": "derived",
+    "status": "idle"
+  },
+  {
+    "pid": 144098,
+    "sessionId": "07080097-a4b0-40aa-bd3b-3ffed66edcd9",
+    "cwd": "/home/rishi/projects/monorepo/stables-ops",
+    "kind": "interactive",
+    "entrypoint": "cli",
+    "version": "2.1.202",
+    "peerProtocol": 1,
+    "messagingSocketPath": null,
+    "name": "redacted-144098",
+    "nameSource": "derived",
+    "status": "idle"
+  },
+  {
+    "pid": 1790423,
+    "sessionId": "4cd90245-a147-4055-a27f-a7192dcf64bf",
+    "cwd": "/home/rishi/projects/monorepo/stables-core-web-backoffice",
+    "kind": "interactive",
+    "entrypoint": "cli",
+    "version": "2.1.207",
+    "peerProtocol": 1,
+    "messagingSocketPath": null,
+    "name": "redacted-1790423",
+    "nameSource": "derived",
+    "status": "shell"
+  },
+  {
+    "pid": 2684716,
+    "sessionId": "0ce5be82-6a41-4752-acd7-f00a36f9a0a8",
+    "cwd": "/home/rishi/projects/monorepo/stables-core-app",
+    "kind": "bg",
+    "entrypoint": "cli",
+    "version": "2.1.225",
+    "peerProtocol": 1,
+    "messagingSocketPath": "/run/user/1000/cc-socks/2684716.sock",
+    "name": "redacted-2684716",
+    "nameSource": null,
+    "status": "idle"
+  },
+  {
+    "pid": 2899670,
+    "sessionId": "5de4610d-562b-413e-9664-610491e0af83",
+    "cwd": "/home/rishi/projects/monorepo/stables-core-web",
+    "kind": "interactive",
+    "entrypoint": "cli",
+    "version": "2.1.226",
+    "peerProtocol": 1,
+    "messagingSocketPath": null,
+    "name": "redacted-2899670",
+    "nameSource": "derived",
+    "status": "busy"
+  },
+  {
+    "pid": 524964,
+    "sessionId": "96752965-36ac-41b5-9c8e-767273e65cde",
+    "cwd": "/home/rishi/projects/clauditor",
+    "kind": "interactive",
+    "entrypoint": "cli",
+    "version": "2.1.224",
+    "peerProtocol": 1,
+    "messagingSocketPath": null,
+    "name": "redacted-524964",
+    "nameSource": null,
+    "status": "busy"
+  },
+  {
+    "pid": 717329,
+    "sessionId": "2f0466f6-99b2-495c-80d8-a04f40f5ef15",
+    "cwd": "/home/rishi/projects/ai-os",
+    "kind": "interactive",
+    "entrypoint": "cli",
+    "version": "2.1.224",
+    "peerProtocol": 1,
+    "messagingSocketPath": null,
+    "name": "redacted-717329",
+    "nameSource": null,
+    "status": "busy"
+  }
+]
