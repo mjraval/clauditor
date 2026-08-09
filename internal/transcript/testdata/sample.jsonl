@@ -1,0 +1,11 @@
+{"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: messages below were generated while running local commands.</local-command-caveat>"}}
+{"type":"last-prompt","prompt":"ignored envelope"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Build the cockpit per the spec."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"planning the work","signature":"abc"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll start by reading\nthe existing layout."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"go build ./...","description":"build"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"Edit","input":{"file_path":"/repo/internal/tui/app.go"}}]}}
+{"type":"ai-title","title":"cockpit v2"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done. The build is green."},{"type":"tool_use","id":"toolu_3","name":"Read","input":{"file_path":"README.md"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Continue from where you left off."}]}}
