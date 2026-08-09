@@ -19,13 +19,26 @@ import (
 // internal/ui/... blank-run handling. Re-implemented in Go for clauditor.
 
 // dangerSeqRe matches the display-damaging sequences: erase-line/screen (K/J),
-// scroll (S/T), insert/delete-line (L/M), set-scroll-region (r), and the 7-bit
-// index / reverse-index / next-line controls (ESC D / ESC M / ESC E). These
-// would move or clear rows of the outer cockpit terminal.
-var dangerSeqRe = regexp.MustCompile(`\x1b\[[0-9;?]*[KJLMSTr]|\x1b[DEM]`)
+// scroll (S/T), insert/delete-line (L/M), set-scroll-region (r), cursor
+// movement/addressing (A/B/C/D/E/F/G/H/f/d — capture-pane output never
+// contains these because tmux's VT parser resolves motion into the grid, but
+// this sanitizer must stay safe for ANY future caller, QA finding), the
+// device-status query (CSI n, would make the host terminal WRITE a reply),
+// and the 7-bit index / reverse-index / next-line controls (ESC D / ESC M /
+// ESC E). These would move, clear, or interrogate the outer cockpit terminal.
+var dangerSeqRe = regexp.MustCompile(`\x1b\[[0-9;?]*[KJLMSTrABCDEFGHfdn]|\x1b[DEM]`)
+
+// oscSeqRe matches complete OSC sequences (title-set, hyperlinks, clipboard —
+// terminated by BEL or ST) plus DCS/PM/APC strings. Stripped whole BEFORE the
+// C0 pass: dropping a BEL terminator on its own would convert an already-
+// terminated (harmless) OSC into an unterminated one — exactly the failure
+// this kit exists to prevent (QA finding). Unterminated OSC/DCS at
+// end-of-line loses everything to the line end, which is the safe direction.
+var oscSeqRe = regexp.MustCompile(`\x1b[\]PX^_][^\x07\x1b]*(\x07|\x1b\\|$)`)
 
 // stripDangerSeqs removes the host-terminal-damaging escapes (step 1).
 func stripDangerSeqs(s string) string {
+	s = oscSeqRe.ReplaceAllString(s, "")
 	return dangerSeqRe.ReplaceAllString(s, "")
 }
 

@@ -74,3 +74,48 @@ func TestSanitizeCapture_FullPipeline(t *testing.T) {
 		}
 	}
 }
+
+// Regression (QA): complete OSC sequences (BEL- or ST-terminated) are stripped
+// whole — dropping only the BEL would create the unterminated-OSC hazard.
+func TestSanitizeCapture_OSCStrippedWhole(t *testing.T) {
+	in := "before \x1b]0;evil-title\x07after"
+	got := sanitizeCaptureLine(in, 80)
+	if strings.Contains(got, "\x1b]") || strings.Contains(got, "evil-title") {
+		t.Errorf("OSC not stripped whole: %q", got)
+	}
+	if !strings.Contains(got, "before") || !strings.Contains(got, "after") {
+		t.Errorf("surrounding text lost: %q", got)
+	}
+	// ST-terminated hyperlink: escapes go, visible text stays.
+	link := "\x1b]8;;http://x\x1b\\click\x1b]8;;\x1b\\"
+	got = sanitizeCaptureLine(link, 80)
+	if strings.Contains(got, "\x1b]") {
+		t.Errorf("OSC-8 not stripped: %q", got)
+	}
+	if !strings.Contains(got, "click") {
+		t.Errorf("hyperlink text lost: %q", got)
+	}
+	// Unterminated OSC at line end: loses to EOL (safe direction).
+	got = sanitizeCaptureLine("txt \x1b]0;unterminated", 80)
+	if strings.Contains(got, "\x1b]") {
+		t.Errorf("unterminated OSC survived: %q", got)
+	}
+}
+
+// Regression (QA): cursor movement/addressing and DSR are stripped even though
+// capture-pane never emits them — the sanitizer must stay safe for any caller.
+func TestSanitizeCapture_CursorAndDSRStripped(t *testing.T) {
+	in := "a\x1b[2Ab\x1b[10;20Hc\x1b[6nd\x1b[31mred"
+	got := sanitizeCaptureLine(in, 80)
+	for _, bad := range []string{"\x1b[2A", "\x1b[10;20H", "\x1b[6n"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("dangerous seq %q survived: %q", bad, got)
+		}
+	}
+	if !strings.Contains(got, "\x1b[31m") {
+		t.Errorf("SGR color wrongly stripped: %q", got)
+	}
+	if !strings.Contains(got, "a") || !strings.Contains(got, "red") {
+		t.Errorf("text lost: %q", got)
+	}
+}

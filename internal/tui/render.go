@@ -209,11 +209,20 @@ func sessionBody(s *model.Session, inner int) string {
 		tiers = []tier{{"", 16}, {"", 8}, {"", 0}}
 	}
 
+	// A blocked session sometimes reports waitingFor empty (observed live:
+	// an AskUserQuestion wait). Blocked authoritatively means "waiting on a
+	// human", so the ⚑ flag falls back to a generic label rather than
+	// vanishing (QA observation — the one NEEDS INPUT row had no flag).
+	waiting := s.WaitingFor
+	if waiting == "" && s.NeedsInput() {
+		waiting = "input"
+	}
+
 	build := func(t tier) (string, int) {
 		fixed := 0
 		wf := ""
-		if s.WaitingFor != "" && t.wfCap > 0 {
-			wf = " ⚑ " + truncate(s.WaitingFor, t.wfCap)
+		if waiting != "" && t.wfCap > 0 {
+			wf = " ⚑ " + truncate(waiting, t.wfCap)
 			fixed += runeLen(wf)
 		}
 		badge := ""

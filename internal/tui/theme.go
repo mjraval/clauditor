@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -63,13 +64,23 @@ func hexRGB(hex string) (int, int, int) {
 
 // bgSeq is the raw "set background" SGR for a hex color, routed through the live
 // color profile so a 256-color terminal gets an indexed sequence. Returns ""
-// on a no-color profile so paint degrades to an unpainted pad.
+// on a no-color profile so paint degrades to an unpainted pad. The two-or-three
+// constant tone strings are cached (bgSeqCache) so the hex-parse + profile
+// downsample doesn't run per row per frame — keeping the "allocations out of
+// the hot path" claim true (QA nit).
+var bgSeqCache sync.Map // hex → sequence string
+
 func bgSeq(hex string) string {
-	seq := lipgloss.ColorProfile().Color(hex).Sequence(true)
-	if seq == "" {
-		return ""
+	if v, ok := bgSeqCache.Load(hex); ok {
+		return v.(string)
 	}
-	return "\x1b[" + seq + "m"
+	seq := lipgloss.ColorProfile().Color(hex).Sequence(true)
+	out := ""
+	if seq != "" {
+		out = "\x1b[" + seq + "m"
+	}
+	bgSeqCache.Store(hex, out)
+	return out
 }
 
 // paint pads a possibly-styled line to an exact display width AND fills every

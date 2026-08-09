@@ -318,3 +318,14 @@ func TestHumanDur_Days(t *testing.T) {
 		}
 	}
 }
+
+// Regression (QA): a blocked session with empty waitingFor still shows a ⚑
+// flag ("input") — blocked means waiting on a human even when the supervisor
+// gives no reason string.
+func TestSessionBody_BlockedWithoutWaitingForShowsFlag(t *testing.T) {
+	s := &model.Session{Name: "quiet-blocked", State: model.StateBlocked, Kind: model.KindSupervisorBG, ID: "ab12cd34"}
+	body := sessionBody(s, 60)
+	if !strings.Contains(body, "⚑ input") {
+		t.Errorf("blocked-without-reason row lost its flag: %q", body)
+	}
+}
